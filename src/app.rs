@@ -1070,10 +1070,10 @@ impl App {
                             let max_w = self
                                 .main_area
                                 .width
-                                .saturating_sub(24 + reserved)
-                                .max(min_w);
+                                .saturating_sub(24 + reserved);
+                            let floor = min_w.min(max_w);
                             self.tree_width =
-                                col.saturating_sub(self.main_area.x).clamp(min_w, max_w);
+                                col.saturating_sub(self.main_area.x).clamp(floor, max_w);
                             self.set_pointer(true);
                             return;
                         }
@@ -1092,17 +1092,14 @@ impl App {
                             } else {
                                 20
                             };
-                            let max_w = self
-                                .main_area
-                                .width
-                                .saturating_sub(left_min)
-                                .max(min_w);
+                            let max_w = self.main_area.width.saturating_sub(left_min);
+                            let floor = min_w.min(max_w);
                             let from_right = self
                                 .main_area
                                 .x
                                 .saturating_add(self.main_area.width)
                                 .saturating_sub(col.saturating_add(1));
-                            self.term_width = from_right.clamp(min_w, max_w);
+                            self.term_width = from_right.clamp(floor, max_w);
                             self.set_pointer(true);
                             return;
                         }
@@ -1231,10 +1228,10 @@ impl App {
                             let max_w = self
                                 .main_area
                                 .width
-                                .saturating_sub(24 + reserved)
-                                .max(min_w);
+                                .saturating_sub(24 + reserved);
+                            let floor = min_w.min(max_w);
                             self.tree_width =
-                                col.saturating_sub(self.main_area.x).clamp(min_w, max_w);
+                                col.saturating_sub(self.main_area.x).clamp(floor, max_w);
                         }
                         DragKind::HSplit => {
                             let total = self.main_area.height.max(1);
@@ -1249,17 +1246,14 @@ impl App {
                             } else {
                                 20
                             };
-                            let max_w = self
-                                .main_area
-                                .width
-                                .saturating_sub(left_min)
-                                .max(min_w);
+                            let max_w = self.main_area.width.saturating_sub(left_min);
+                            let floor = min_w.min(max_w);
                             let from_right = self
                                 .main_area
                                 .x
                                 .saturating_add(self.main_area.width)
                                 .saturating_sub(col.saturating_add(1));
-                            self.term_width = from_right.clamp(min_w, max_w);
+                            self.term_width = from_right.clamp(floor, max_w);
                         }
                     }
                 }
@@ -1444,21 +1438,42 @@ impl App {
     }
 
     fn layout_right_dock(&mut self, f: &mut Frame<'_>, main_area: Rect) -> (Rect, Rect) {
-        let min_w = 24u16;
+        const TERM_MIN: u16 = 24;
+        const VIEWER_MIN: u16 = 20;
+        const TREE_MIN: u16 = 18;
+        const SPLIT: u16 = 1;
+
+        // Reserve explorer + v-split + viewer (+ term splitter) before sizing the terminal.
+        // Do not inflate max_w with TERM_MIN — that over-constrains the left pane.
         let left_min = if self.show_tree {
             self.tree_width.saturating_add(22)
         } else {
-            20
+            VIEWER_MIN.saturating_add(SPLIT)
         };
-        let max_w = main_area.width.saturating_sub(left_min).max(min_w);
-        let term_w = self.term_width.clamp(min_w, max_w);
+        let max_w = main_area.width.saturating_sub(left_min);
+        let term_w = if max_w == 0 {
+            0
+        } else {
+            self.term_width.clamp(TERM_MIN.min(max_w), max_w)
+        };
         self.term_width = term_w;
+
+        // Shrink the explorer so tree + splitter + viewer still fit in the content column.
+        let content_w = main_area.width.saturating_sub(term_w.saturating_add(SPLIT));
+        if self.show_tree {
+            let tree_max = content_w.saturating_sub(SPLIT.saturating_add(VIEWER_MIN));
+            self.tree_width = if tree_max == 0 {
+                0
+            } else {
+                self.tree_width.clamp(TREE_MIN.min(tree_max), tree_max)
+            };
+        }
 
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Min(20),
-                Constraint::Length(1), // vertical splitter
+                Constraint::Min(VIEWER_MIN),
+                Constraint::Length(SPLIT), // vertical splitter
                 Constraint::Length(term_w),
             ])
             .split(main_area);

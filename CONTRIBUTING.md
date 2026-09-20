@@ -56,7 +56,7 @@ cargo install --path . --force
 | `src/tree.rs` | File explorer |
 | `src/viewer.rs` | Read-only file / diff viewer + syntax highlight |
 | `src/term_pane.rs` | Embedded PTY terminals |
-| `src/git.rs` | Branch + porcelain status + diff |
+| `src/git.rs` | Branch list + porcelain status + stage/blame/diff |
 | `src/watch.rs` | Filesystem watcher for live reload |
 | `src/theme.rs` | Color palettes + `~/.noir/theme` |
 

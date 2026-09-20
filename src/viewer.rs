@@ -8,15 +8,22 @@ use syntect::highlighting::{ThemeSet, Style as SynStyle};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 
-use crate::git::GitStatus;
+use crate::git::{BlameLine, DiffKind, GitStatus};
 use crate::theme::Theme;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    File,
+    Diff(DiffKind),
+    Blame,
+}
 
 pub struct OpenFile {
     pub path: PathBuf,
     pub title: String,
     pub lines: Vec<Line<'static>>,
     pub scroll: u16,
-    pub show_diff: bool,
+    pub mode: ViewMode,
 }
 
 pub struct FileViewer {
@@ -59,7 +66,19 @@ impl FileViewer {
     }
 
     pub fn show_diff(&self) -> bool {
-        self.active().map(|t| t.show_diff).unwrap_or(false)
+        matches!(self.mode(), ViewMode::Diff(_))
+    }
+
+    pub fn mode(&self) -> ViewMode {
+        self.active().map(|t| t.mode).unwrap_or(ViewMode::File)
+    }
+
+    pub fn mode_label(&self) -> &'static str {
+        match self.mode() {
+            ViewMode::File => "EDITOR",
+            ViewMode::Diff(kind) => kind.label(),
+            ViewMode::Blame => "BLAME",
+        }
     }
 
     pub fn lines(&self) -> &[Line<'static>] {
@@ -86,7 +105,7 @@ impl FileViewer {
             title,
             lines: Vec::new(),
             scroll: 0,
-            show_diff: false,
+            mode: ViewMode::File,
         };
         reload_tab(&mut tab, root, &self.syntax_set, &self.theme_set);
         self.tabs.push(tab);
@@ -144,12 +163,67 @@ impl FileViewer {
         }
     }
 
+    /// Cycle file → HEAD diff → unstaged → staged → file.
     pub fn toggle_diff(&mut self, root: &Path) {
         if self.tabs.is_empty() {
             return;
         }
         let idx = self.active;
-        self.tabs[idx].show_diff = !self.tabs[idx].show_diff;
+        self.tabs[idx].mode = match self.tabs[idx].mode {
+            ViewMode::File | ViewMode::Blame => ViewMode::Diff(DiffKind::first()),
+            ViewMode::Diff(kind) => match kind.cycle() {
+                Some(next) => ViewMode::Diff(next),
+                None => ViewMode::File,
+            },
+        };
+        self.tabs[idx].scroll = 0;
+        reload_tab(
+            &mut self.tabs[idx],
+            root,
+            &self.syntax_set,
+            &self.theme_set,
+        );
+    }
+
+    pub fn set_diff_kind(&mut self, root: &Path, kind: DiffKind) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        let idx = self.active;
+        self.tabs[idx].mode = ViewMode::Diff(kind);
+        self.tabs[idx].scroll = 0;
+        reload_tab(
+            &mut self.tabs[idx],
+            root,
+            &self.syntax_set,
+            &self.theme_set,
+        );
+    }
+
+    pub fn toggle_blame(&mut self, root: &Path) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        let idx = self.active;
+        self.tabs[idx].mode = match self.tabs[idx].mode {
+            ViewMode::Blame => ViewMode::File,
+            _ => ViewMode::Blame,
+        };
+        self.tabs[idx].scroll = 0;
+        reload_tab(
+            &mut self.tabs[idx],
+            root,
+            &self.syntax_set,
+            &self.theme_set,
+        );
+    }
+
+    pub fn show_blame(&mut self, root: &Path) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        let idx = self.active;
+        self.tabs[idx].mode = ViewMode::Blame;
         self.tabs[idx].scroll = 0;
         reload_tab(
             &mut self.tabs[idx],
@@ -176,11 +250,22 @@ impl FileViewer {
 }
 
 fn reload_tab(tab: &mut OpenFile, root: &Path, syntax_set: &SyntaxSet, theme_set: &ThemeSet) {
-    if tab.show_diff {
-        let diff = GitStatus::diff(root, &tab.path)
-            .unwrap_or_else(|| "(unable to read git diff)".to_string());
-        tab.lines = diff.lines().map(colorize_diff_line).collect();
-        return;
+    match tab.mode {
+        ViewMode::Diff(kind) => {
+            let diff = GitStatus::diff_kind(root, &tab.path, kind)
+                .unwrap_or_else(|| "(unable to read git diff)".to_string());
+            tab.lines = diff.lines().map(colorize_diff_line).collect();
+            return;
+        }
+        ViewMode::Blame => {
+            tab.lines = match GitStatus::blame(root, &tab.path) {
+                Some(blame) if !blame.is_empty() => blame.into_iter().map(colorize_blame_line).collect(),
+                Some(_) => vec![Line::from("(empty blame)")],
+                None => vec![Line::from("(unable to read git blame — untracked?)")],
+            };
+            return;
+        }
+        ViewMode::File => {}
     }
 
     match fs::read(&tab.path) {
@@ -368,4 +453,39 @@ fn colorize_diff_line(line: &str) -> Line<'static> {
         Style::default().fg(Theme::get().fg_dim).bg(Theme::get().bg)
     };
     Line::from(Span::styled(line.to_string(), style))
+}
+
+fn colorize_blame_line(line: BlameLine) -> Line<'static> {
+    let meta = format!("{:<7} {:<12} ", line.short_sha, truncate_str(&line.author, 12));
+    Line::from(vec![
+        Span::styled(
+            meta,
+            Style::default().fg(Theme::get().fg_muted).bg(Theme::get().bg),
+        ),
+        Span::styled(
+            "│ ",
+            Style::default().fg(Theme::get().border).bg(Theme::get().bg),
+        ),
+        Span::styled(
+            line.content,
+            Style::default().fg(Theme::get().fg).bg(Theme::get().bg),
+        ),
+    ])
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    let mut out = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i >= max {
+            break;
+        }
+        out.push(ch);
+    }
+    if s.chars().count() > max {
+        // pad already truncated — keep fixed width feel
+    }
+    while out.chars().count() < max {
+        out.push(' ');
+    }
+    out
 }

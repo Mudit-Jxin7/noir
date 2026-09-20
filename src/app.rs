@@ -14,7 +14,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 
-use crate::git::GitStatus;
+use crate::git::{DiffKind, GitBranch, GitEntry, GitStatus};
 use crate::search::{FileIndex, SearchHit};
 use crate::term_pane::TermPane;
 use crate::theme::{PaletteId, Theme};
@@ -27,6 +27,12 @@ enum Focus {
     Tree,
     Viewer,
     Terminal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GitPaneTab {
+    Changes,
+    Branches,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +74,12 @@ pub struct App {
     branch: String,
     watch_rx: Receiver<WatchEvent>,
     show_tree: bool,
+    show_git: bool,
+    git_tab: GitPaneTab,
+    git_entries: Vec<GitEntry>,
+    git_branches: Vec<GitBranch>,
+    git_cursor: usize,
+    git_scroll: usize,
     last_git_refresh: Instant,
     term_area: Rect,
     term_body_area: Rect,
@@ -106,6 +118,7 @@ impl App {
     pub fn new(root: PathBuf, shell: String) -> Result<Self> {
         Theme::load_saved();
         let git = GitStatus::load(&root);
+        let git_branches = GitStatus::branches(&root);
         let tree = FileTree::new(root.clone(), git.map);
         let watch_rx = spawn_watcher(&root)?;
         let first = TermPane::spawn(&root, &shell, 20, 80, "zsh · 1".into())?;
@@ -122,6 +135,12 @@ impl App {
             branch: git.branch,
             watch_rx,
             show_tree: true,
+            show_git: false,
+            git_tab: GitPaneTab::Changes,
+            git_entries: git.entries,
+            git_branches,
+            git_cursor: 0,
+            git_scroll: 0,
             last_git_refresh: Instant::now(),
             term_area: Rect::default(),
             term_body_area: Rect::default(),
@@ -266,7 +285,12 @@ impl App {
         self.pointer_on = over;
         if point_in(self.tree_inner, col, row) {
             let y = row.saturating_sub(self.tree_inner.y) as usize;
-            self.tree_hover_row = Some(self.tree.scroll + y);
+            let scroll = if self.show_git {
+                self.git_scroll
+            } else {
+                self.tree.scroll
+            };
+            self.tree_hover_row = Some(scroll + y);
         } else {
             self.tree_hover_row = None;
         }
@@ -377,7 +401,144 @@ impl App {
         let git = GitStatus::load(&self.root);
         self.branch = git.branch;
         self.tree.set_git(git.map);
+        self.git_entries = git.entries;
+        if self.show_git {
+            self.git_branches = GitStatus::branches(&self.root);
+        }
+        self.clamp_git_cursor();
         self.last_git_refresh = Instant::now();
+    }
+
+    fn open_git_pane(&mut self) {
+        self.show_tree = true;
+        self.show_git = true;
+        self.show_help = false;
+        self.show_themes = false;
+        self.show_search = false;
+        self.focus = Focus::Tree;
+        self.git_branches = GitStatus::branches(&self.root);
+        self.refresh_git();
+        self.status = "Git · s stage · u unstage · b branches · l blame".into();
+    }
+
+    fn close_git_pane(&mut self) {
+        self.show_git = false;
+        self.status = "Explorer · click a file to open".into();
+    }
+
+    fn clamp_git_cursor(&mut self) {
+        let len = match self.git_tab {
+            GitPaneTab::Changes => self.git_entries.len(),
+            GitPaneTab::Branches => self.git_branches.len(),
+        };
+        if len == 0 {
+            self.git_cursor = 0;
+            self.git_scroll = 0;
+            return;
+        }
+        if self.git_cursor >= len {
+            self.git_cursor = len - 1;
+        }
+    }
+
+    fn git_list_len(&self) -> usize {
+        match self.git_tab {
+            GitPaneTab::Changes => self.git_entries.len(),
+            GitPaneTab::Branches => self.git_branches.len(),
+        }
+    }
+
+    fn ensure_git_visible(&mut self, height: usize) {
+        if height == 0 {
+            return;
+        }
+        if self.git_cursor < self.git_scroll {
+            self.git_scroll = self.git_cursor;
+        } else if self.git_cursor >= self.git_scroll + height {
+            self.git_scroll = self.git_cursor + 1 - height;
+        }
+    }
+
+    fn stage_selected(&mut self) {
+        let Some(entry) = self.git_entries.get(self.git_cursor).cloned() else {
+            self.status = "No file selected".into();
+            return;
+        };
+        match GitStatus::stage(&self.root, &entry.path) {
+            Ok(()) => {
+                self.status = format!("Staged · {}", entry.rel);
+                self.refresh_git();
+            }
+            Err(err) => self.status = format!("Stage failed · {err}"),
+        }
+    }
+
+    fn unstage_selected(&mut self) {
+        let Some(entry) = self.git_entries.get(self.git_cursor).cloned() else {
+            self.status = "No file selected".into();
+            return;
+        };
+        match GitStatus::unstage(&self.root, &entry.path) {
+            Ok(()) => {
+                self.status = format!("Unstaged · {}", entry.rel);
+                self.refresh_git();
+            }
+            Err(err) => self.status = format!("Unstage failed · {err}"),
+        }
+    }
+
+    fn open_selected_git_file(&mut self) {
+        let Some(entry) = self.git_entries.get(self.git_cursor).cloned() else {
+            return;
+        };
+        self.open_file(entry.path);
+    }
+
+    fn diff_selected(&mut self, kind: DiffKind) {
+        let Some(entry) = self.git_entries.get(self.git_cursor).cloned() else {
+            self.status = "No file selected".into();
+            return;
+        };
+        self.open_file(entry.path);
+        self.viewer.set_diff_kind(&self.root, kind);
+        self.focus = Focus::Viewer;
+        self.status = format!("{} · {}", kind.label(), entry.rel);
+    }
+
+    fn blame_active_or_selected(&mut self) {
+        if self.git_tab == GitPaneTab::Changes {
+            if let Some(entry) = self.git_entries.get(self.git_cursor).cloned() {
+                self.open_file(entry.path);
+            }
+        }
+        if self.viewer.is_empty() {
+            self.status = "Open a file first for blame".into();
+            return;
+        }
+        self.viewer.show_blame(&self.root);
+        self.focus = Focus::Viewer;
+        self.status = format!("Blame · {}", self.viewer.title());
+    }
+
+    fn checkout_selected_branch(&mut self) {
+        let Some(branch) = self.git_branches.get(self.git_cursor).cloned() else {
+            self.status = "No branch selected".into();
+            return;
+        };
+        if branch.current {
+            self.status = format!("Already on · {}", branch.name);
+            return;
+        }
+        match GitStatus::checkout(&self.root, &branch.name) {
+            Ok(()) => {
+                self.status = format!("Checked out · {}", branch.name);
+                self.refresh_git();
+            }
+            Err(err) => {
+                let short = err.lines().next().unwrap_or("checkout failed");
+                self.status = format!("Checkout failed · {short}");
+            }
+        }
     }
 
     fn on_key(&mut self, key: KeyEvent) {
@@ -489,6 +650,20 @@ impl App {
             return;
         }
 
+        if ctrl && key.code == KeyCode::Char('g') {
+            if self.show_git {
+                self.close_git_pane();
+            } else {
+                self.open_git_pane();
+            }
+            return;
+        }
+
+        if ctrl && key.code == KeyCode::Char('l') && self.focus != Focus::Terminal {
+            self.blame_active_or_selected();
+            return;
+        }
+
         if ctrl && key.code == KeyCode::Char('p') {
             self.show_themes = true;
             self.theme_cursor = Theme::id().index();
@@ -536,6 +711,7 @@ impl App {
                         Focus::Terminal => Focus::Tree,
                     };
                     self.status = match self.focus {
+                        Focus::Tree if self.show_git => "Git · s stage · Tab branches · Esc files".into(),
                         Focus::Tree => "Explorer · click a file to open".into(),
                         Focus::Viewer => "Editor · scroll to read · Ctrl+D diff".into(),
                         Focus::Terminal => "Terminal · type here (Esc to leave)".into(),
@@ -562,6 +738,13 @@ impl App {
                 KeyCode::Char('d') if self.focus != Focus::Terminal => {
                     self.viewer.toggle_diff(&self.root);
                     self.focus = Focus::Viewer;
+                    self.status = match self.viewer.mode() {
+                        crate::viewer::ViewMode::Diff(kind) => {
+                            format!("{} · Ctrl+D cycles HEAD → unstaged → staged", kind.label())
+                        }
+                        crate::viewer::ViewMode::Blame => "Blame".into(),
+                        crate::viewer::ViewMode::File => "File view".into(),
+                    };
                     return;
                 }
                 KeyCode::Char(']') if self.focus == Focus::Viewer => {
@@ -600,8 +783,122 @@ impl App {
 
         match self.focus {
             Focus::Terminal => self.on_term_key(key),
+            Focus::Tree if self.show_git => self.on_git_key(key),
             Focus::Tree => self.on_tree_key(key),
             Focus::Viewer => self.on_viewer_key(key),
+        }
+    }
+
+    fn on_git_key(&mut self, key: KeyEvent) {
+        let height = self.tree_inner.height as usize;
+        match key.code {
+            KeyCode::Esc => {
+                self.close_git_pane();
+            }
+            KeyCode::Tab => {
+                self.git_tab = match self.git_tab {
+                    GitPaneTab::Changes => GitPaneTab::Branches,
+                    GitPaneTab::Branches => GitPaneTab::Changes,
+                };
+                self.git_cursor = 0;
+                self.git_scroll = 0;
+                if self.git_tab == GitPaneTab::Branches {
+                    self.git_branches = GitStatus::branches(&self.root);
+                    if let Some(idx) = self.git_branches.iter().position(|b| b.current) {
+                        self.git_cursor = idx;
+                    }
+                }
+                self.clamp_git_cursor();
+                self.ensure_git_visible(height);
+            }
+            KeyCode::Char('c') => {
+                self.git_tab = GitPaneTab::Changes;
+                self.git_cursor = 0;
+                self.git_scroll = 0;
+                self.clamp_git_cursor();
+            }
+            KeyCode::Char('b') => {
+                self.git_tab = GitPaneTab::Branches;
+                self.git_branches = GitStatus::branches(&self.root);
+                self.git_cursor = self
+                    .git_branches
+                    .iter()
+                    .position(|b| b.current)
+                    .unwrap_or(0);
+                self.git_scroll = 0;
+                self.ensure_git_visible(height);
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.git_cursor > 0 {
+                    self.git_cursor -= 1;
+                } else if self.git_list_len() > 0 {
+                    self.git_cursor = self.git_list_len() - 1;
+                }
+                self.ensure_git_visible(height);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let len = self.git_list_len();
+                if len > 0 {
+                    self.git_cursor = (self.git_cursor + 1) % len;
+                }
+                self.ensure_git_visible(height);
+            }
+            KeyCode::PageUp => {
+                self.git_cursor = self.git_cursor.saturating_sub(height.max(1));
+                self.ensure_git_visible(height);
+            }
+            KeyCode::PageDown => {
+                let len = self.git_list_len();
+                if len > 0 {
+                    self.git_cursor = (self.git_cursor + height.max(1)).min(len - 1);
+                }
+                self.ensure_git_visible(height);
+            }
+            KeyCode::Home => {
+                self.git_cursor = 0;
+                self.git_scroll = 0;
+            }
+            KeyCode::End => {
+                let len = self.git_list_len();
+                if len > 0 {
+                    self.git_cursor = len - 1;
+                    self.ensure_git_visible(height);
+                }
+            }
+            KeyCode::Char('s') if self.git_tab == GitPaneTab::Changes => self.stage_selected(),
+            KeyCode::Char('u') if self.git_tab == GitPaneTab::Changes => self.unstage_selected(),
+            KeyCode::Char(' ') if self.git_tab == GitPaneTab::Changes => {
+                if let Some(entry) = self.git_entries.get(self.git_cursor) {
+                    if entry.is_unstaged() {
+                        self.stage_selected();
+                    } else if entry.is_staged() {
+                        self.unstage_selected();
+                    }
+                }
+            }
+            KeyCode::Char('d') if self.git_tab == GitPaneTab::Changes => {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.diff_selected(DiffKind::Staged);
+                } else {
+                    self.diff_selected(DiffKind::Unstaged);
+                }
+            }
+            KeyCode::Char('D') if self.git_tab == GitPaneTab::Changes => {
+                self.diff_selected(DiffKind::Staged);
+            }
+            KeyCode::Char('h') if self.git_tab == GitPaneTab::Changes => {
+                self.diff_selected(DiffKind::Head);
+            }
+            KeyCode::Char('l') => self.blame_active_or_selected(),
+            KeyCode::Enter => match self.git_tab {
+                GitPaneTab::Changes => self.open_selected_git_file(),
+                GitPaneTab::Branches => self.checkout_selected_branch(),
+            },
+            KeyCode::Char('r') => {
+                self.refresh_git();
+                self.status = "Git refreshed".into();
+            }
+            _ => {}
         }
     }
 
@@ -690,7 +987,23 @@ impl App {
                     .saturating_sub(height as usize) as u16;
                 self.viewer.set_scroll(max);
             }
-            KeyCode::Char('d') => self.viewer.toggle_diff(&self.root),
+            KeyCode::Char('d') => {
+                self.viewer.toggle_diff(&self.root);
+                self.status = match self.viewer.mode() {
+                    crate::viewer::ViewMode::Diff(kind) => {
+                        format!("{} · Ctrl+D cycles modes", kind.label())
+                    }
+                    crate::viewer::ViewMode::Blame => "Blame".into(),
+                    crate::viewer::ViewMode::File => "File view".into(),
+                };
+            }
+            KeyCode::Char('l') => {
+                self.viewer.toggle_blame(&self.root);
+                self.status = match self.viewer.mode() {
+                    crate::viewer::ViewMode::Blame => "Blame".into(),
+                    _ => "File view".into(),
+                };
+            }
             _ => {}
         }
     }
@@ -746,7 +1059,12 @@ impl App {
 
                 if point_in(self.tree_inner, col, row) {
                     let y = row.saturating_sub(self.tree_inner.y) as usize;
-                    self.tree_hover_row = Some(self.tree.scroll + y);
+                    let scroll = if self.show_git {
+                        self.git_scroll
+                    } else {
+                        self.tree.scroll
+                    };
+                    self.tree_hover_row = Some(scroll + y);
                 } else {
                     self.tree_hover_row = None;
                 }
@@ -783,9 +1101,20 @@ impl App {
                         HitKind::TreeRow => {
                             self.focus = Focus::Tree;
                             let y = row.saturating_sub(self.tree_inner.y) as usize;
-                            let index = self.tree.scroll + y;
-                            if let Some(path) = self.tree.open_at_flat_index(index) {
-                                self.open_file(path);
+                            if self.show_git {
+                                let index = self.git_scroll + y;
+                                if index < self.git_list_len() {
+                                    self.git_cursor = index;
+                                    match self.git_tab {
+                                        GitPaneTab::Changes => self.open_selected_git_file(),
+                                        GitPaneTab::Branches => self.checkout_selected_branch(),
+                                    }
+                                }
+                            } else {
+                                let index = self.tree.scroll + y;
+                                if let Some(path) = self.tree.open_at_flat_index(index) {
+                                    self.open_file(path);
+                                }
                             }
                         }
                         HitKind::ViewerBody => self.focus = Focus::Viewer,
@@ -836,7 +1165,14 @@ impl App {
                 {
                     self.focus = Focus::Tree;
                     let h = self.tree_inner.height.max(1) as usize;
-                    self.tree.scroll_by(-1, h);
+                    if self.show_git {
+                        if self.git_cursor > 0 {
+                            self.git_cursor -= 1;
+                        }
+                        self.ensure_git_visible(h);
+                    } else {
+                        self.tree.scroll_by(-1, h);
+                    }
                 } else if point_in(self.term_body_area, col, row) {
                     self.active_term_mut().write_bytes(b"\x1b[A");
                 }
@@ -849,7 +1185,15 @@ impl App {
                 {
                     self.focus = Focus::Tree;
                     let h = self.tree_inner.height.max(1) as usize;
-                    self.tree.scroll_by(1, h);
+                    if self.show_git {
+                        let len = self.git_list_len();
+                        if len > 0 && self.git_cursor + 1 < len {
+                            self.git_cursor += 1;
+                        }
+                        self.ensure_git_visible(h);
+                    } else {
+                        self.tree.scroll_by(1, h);
+                    }
                 } else if point_in(self.term_body_area, col, row) {
                     self.active_term_mut().write_bytes(b"\x1b[B");
                 }
@@ -955,7 +1299,11 @@ impl App {
         self.term_area = main[2];
 
         if self.show_tree {
-            self.draw_tree(f, top[0]);
+            if self.show_git {
+                self.draw_git(f, top[0]);
+            } else {
+                self.draw_tree(f, top[0]);
+            }
             self.hits.push(Hit {
                 kind: HitKind::VSplit,
                 area: top[1],
@@ -1021,6 +1369,7 @@ impl App {
             format!("   {} ", self.branch)
         };
         let tip = match self.focus {
+            Focus::Tree if self.show_git => "  git · Ctrl+G files   ",
             Focus::Tree => "  1. click a file   ",
             Focus::Viewer => "  2. read / Ctrl+D diff   ",
             Focus::Terminal => "  3. type codex / claude   ",
@@ -1039,7 +1388,7 @@ impl App {
             ),
             Span::styled(tip, Style::default().fg(Theme::get().accent_glow).bg(Theme::get().titlebar)),
             Span::styled(
-                "  ? help  ·  Ctrl+O search  ·  Ctrl+P themes  ",
+                "  ? help  ·  Ctrl+G git  ·  Ctrl+O search  ",
                 Style::default().fg(Theme::get().fg_muted).bg(Theme::get().titlebar),
             ),
         ]);
@@ -1047,6 +1396,191 @@ impl App {
             Paragraph::new(line).style(Style::default().bg(Theme::get().titlebar)),
             area,
         );
+    }
+
+    fn draw_git(&mut self, f: &mut Frame<'_>, area: Rect) {
+        let focused = self.focus == Focus::Tree;
+        let branch = if self.branch.is_empty() {
+            "no git".to_string()
+        } else {
+            format!(" {}", self.branch)
+        };
+        let tab = match self.git_tab {
+            GitPaneTab::Changes => "changes",
+            GitPaneTab::Branches => "branches",
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Theme::border(focused))
+            .style(Theme::sidebar())
+            .title(Span::styled(
+                format!("  GIT  ·  {branch}  ·  {tab}  "),
+                Theme::title(focused),
+            ))
+            .title_bottom(Span::styled(
+                if focused {
+                    match self.git_tab {
+                        GitPaneTab::Changes => {
+                            "  s stage · u unstage · d/D diff · Tab branches  "
+                        }
+                        GitPaneTab::Branches => "  Enter checkout · Tab changes · Esc files  ",
+                    }
+                } else {
+                    "  Ctrl+G git pane  "
+                },
+                Style::default()
+                    .fg(Theme::get().fg_muted)
+                    .bg(Theme::get().sidebar),
+            ));
+
+        let inner = block.inner(area);
+        self.tree_inner = inner;
+        f.render_widget(block, area);
+
+        let height = inner.height as usize;
+        self.ensure_git_visible(height);
+
+        self.hits.push(Hit {
+            kind: HitKind::TreeRow,
+            area: inner,
+        });
+
+        let mut items: Vec<ListItem> = Vec::new();
+
+        match self.git_tab {
+            GitPaneTab::Changes => {
+                if self.git_entries.is_empty() {
+                    items.push(ListItem::new(Line::from(Span::styled(
+                        "  working tree clean",
+                        Style::default().fg(Theme::get().fg_muted).bg(Theme::get().sidebar),
+                    ))));
+                } else {
+                    // Section headers as virtual rows would shift cursor — instead prefix codes.
+                    for (idx, entry) in self
+                        .git_entries
+                        .iter()
+                        .enumerate()
+                        .skip(self.git_scroll)
+                        .take(height)
+                    {
+                        let selected = idx == self.git_cursor;
+                        let hovered = self.tree_hover_row == Some(idx);
+                        let bg = if selected {
+                            Theme::get().selection
+                        } else if hovered {
+                            Theme::get().tab_hover
+                        } else {
+                            Theme::get().sidebar
+                        };
+                        let code = entry.display_code();
+                        let code_fg = match entry.worktree.max(entry.index) {
+                            'M' | 'U' | 'R' | 'C' => Theme::get().git_mod,
+                            'A' | '?' => Theme::get().git_add,
+                            'D' => Theme::get().git_del,
+                            _ => Theme::get().fg_muted,
+                        };
+                        let staged_mark = if entry.is_staged() { "●" } else { " " };
+                        let label = format!(" {staged_mark} {code}  {} ", entry.rel);
+                        let pad_w = (inner.width as usize)
+                            .saturating_sub(unicode_width::UnicodeWidthStr::width(label.as_str()));
+                        let pad = " ".repeat(pad_w);
+                        let style = Style::default().bg(bg).fg(if selected {
+                            Theme::get().accent_glow
+                        } else {
+                            Theme::get().fg
+                        });
+                        items.push(ListItem::new(Line::from(vec![
+                            Span::styled(
+                                format!(" {staged_mark} "),
+                                Style::default().bg(bg).fg(Theme::get().git_add),
+                            ),
+                            Span::styled(
+                                format!("{code} "),
+                                Style::default().bg(bg).fg(code_fg).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(entry.rel.clone(), style),
+                            Span::styled(pad, Style::default().bg(bg)),
+                        ])));
+                    }
+                }
+            }
+            GitPaneTab::Branches => {
+                if self.git_branches.is_empty() {
+                    items.push(ListItem::new(Line::from(Span::styled(
+                        "  no branches",
+                        Style::default().fg(Theme::get().fg_muted).bg(Theme::get().sidebar),
+                    ))));
+                } else {
+                    for (idx, branch) in self
+                        .git_branches
+                        .iter()
+                        .enumerate()
+                        .skip(self.git_scroll)
+                        .take(height)
+                    {
+                        let selected = idx == self.git_cursor;
+                        let hovered = self.tree_hover_row == Some(idx);
+                        let bg = if selected {
+                            Theme::get().selection
+                        } else if hovered {
+                            Theme::get().tab_hover
+                        } else {
+                            Theme::get().sidebar
+                        };
+                        let mark = if branch.current { "●" } else { "○" };
+                        let label = format!("  {mark} {} ", branch.name);
+                        let pad_w = (inner.width as usize)
+                            .saturating_sub(unicode_width::UnicodeWidthStr::width(label.as_str()));
+                        let pad = " ".repeat(pad_w);
+                        let fg = if branch.current {
+                            Theme::get().accent_glow
+                        } else if selected {
+                            Theme::get().fg
+                        } else {
+                            Theme::get().fg_muted
+                        };
+                        items.push(ListItem::new(Line::from(vec![
+                            Span::styled(
+                                label,
+                                Style::default()
+                                    .bg(bg)
+                                    .fg(fg)
+                                    .add_modifier(if selected || branch.current {
+                                        Modifier::BOLD
+                                    } else {
+                                        Modifier::empty()
+                                    }),
+                            ),
+                            Span::styled(pad, Style::default().bg(bg)),
+                        ])));
+                    }
+                }
+            }
+        }
+
+        f.render_widget(List::new(items), inner);
+
+        let total = self.git_list_len();
+        if total > height && height > 0 {
+            let track = inner.height.max(1) as usize;
+            let thumb_h = ((height * track) / total).max(1);
+            let max_scroll = total.saturating_sub(height).max(1);
+            let thumb_y = (self.git_scroll * (track.saturating_sub(thumb_h))) / max_scroll;
+            let thumb = Rect {
+                x: inner.x.saturating_add(inner.width.saturating_sub(1)),
+                y: inner.y.saturating_add(thumb_y as u16),
+                width: 1,
+                height: thumb_h as u16,
+            };
+            f.render_widget(
+                Paragraph::new("┃").style(
+                    Style::default()
+                        .fg(Theme::get().accent_glow)
+                        .bg(Theme::get().sidebar),
+                ),
+                thumb,
+            );
+        }
     }
 
     fn draw_tree(&mut self, f: &mut Frame<'_>, area: Rect) {
@@ -1167,11 +1701,7 @@ impl App {
 
     fn draw_viewer(&mut self, f: &mut Frame<'_>, area: Rect) {
         let focused = self.focus == Focus::Viewer;
-        let mode = if self.viewer.show_diff() {
-            "DIFF"
-        } else {
-            "EDITOR"
-        };
+        let mode = self.viewer.mode_label();
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -1183,7 +1713,7 @@ impl App {
             ))
             .title_bottom(Span::styled(
                 if focused {
-                    "  scroll to read  ·  Ctrl+D diff  ·  Ctrl+W close  "
+                    "  scroll  ·  Ctrl+D cycle diff  ·  l blame  ·  Ctrl+W close  "
                 } else {
                     "  click here to focus editor  "
                 },
@@ -1501,19 +2031,15 @@ impl App {
 
     fn draw_status(&self, f: &mut Frame<'_>, area: Rect) {
         let focus = match self.focus {
+            Focus::Tree if self.show_git => "GIT",
             Focus::Tree => "FILES",
-            Focus::Viewer => {
-                if self.viewer.show_diff() {
-                    "DIFF"
-                } else {
-                    "EDITOR"
-                }
-            }
+            Focus::Viewer => self.viewer.mode_label(),
             Focus::Terminal => "TERMINAL",
         };
         let tip = match self.focus {
+            Focus::Tree if self.show_git => "s/u stage · Tab branches · l blame",
             Focus::Tree => "Enter/click open file",
-            Focus::Viewer => "Ctrl+D diff · Ctrl+W close",
+            Focus::Viewer => "Ctrl+D cycle diff · l blame · Ctrl+W",
             Focus::Terminal => "Esc leave · Ctrl+N new tab",
         };
         let branch = if self.branch.is_empty() {
@@ -1558,7 +2084,7 @@ impl App {
 
     fn draw_help(&self, f: &mut Frame<'_>, area: Rect) {
         let width = area.width.min(72).max(40);
-        let height = area.height.min(24).max(16);
+        let height = area.height.min(28).max(16);
         let x = area.x + area.width.saturating_sub(width) / 2;
         let y = area.y + area.height.saturating_sub(height) / 2;
         let popup = Rect {
@@ -1609,10 +2135,18 @@ impl App {
             )),
             Line::from("  Ctrl+T   switch panel     Esc      leave terminal"),
             Line::from("  Ctrl+N   new terminal     Ctrl+W   close tab"),
-            Line::from("  Ctrl+D   git diff         Ctrl+B   hide files"),
+            Line::from("  Ctrl+D   cycle diff        Ctrl+G   git pane"),
+            Line::from("  Ctrl+L   blame file        Ctrl+B   hide files"),
             Line::from("  Ctrl+O   search files     Ctrl+Q   quit"),
             Line::from("  Ctrl+P   color themes     Ctrl+0   cycle theme"),
             Line::from("  F1 / ?   this help        o / f    open search"),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Git pane (Ctrl+G)",
+                Style::default().fg(Theme::get().git_add).add_modifier(Modifier::BOLD),
+            )),
+            Line::from("  · s / Space stage · u unstage · d unstaged · D staged"),
+            Line::from("  · Tab / b branches · Enter checkout · l blame · Esc files"),
             Line::from(""),
             Line::from(Span::styled(
                 format!("  Current theme: {}", Theme::id().name()),

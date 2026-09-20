@@ -54,7 +54,7 @@ Themes: `github-dark`, `dracula`, `catppuccin`, `nord`, `tokyo-night`, `gruvbox`
 
 1. Click a file to open it  
 2. Click the terminal pane and run `codex`  
-3. Files reload on save · `Ctrl+D` for diff · `Ctrl+O` search files · `?` for help · `Ctrl+Q` to quit  
+3. Files reload on save · `Ctrl+D` cycles diff · `Ctrl+G` git pane · `Ctrl+O` search files · `?` for help · `Ctrl+Q` to quit  
 
 ## Keybindings
 
@@ -66,7 +66,9 @@ Themes: `github-dark`, `dracula`, `catppuccin`, `nord`, `tokyo-night`, `gruvbox`
 | `Ctrl+[` / `Ctrl+]` | Prev / next file tab |
 | `Ctrl+Tab` | Next terminal |
 | `Ctrl+T` | Cycle focus |
-| `Ctrl+D` | Diff vs `HEAD` |
+| `Ctrl+D` | Cycle diff: HEAD → unstaged → staged → file |
+| `Ctrl+G` | Git pane (stage list, branches, blame) |
+| `Ctrl+L` | Blame active file |
 | `Ctrl+P` / `Ctrl+0` | Theme picker / cycle |
 | `Ctrl+O` | Search files (fuzzy) |
 | `Ctrl+Q` | Quit |

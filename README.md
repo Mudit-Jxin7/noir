@@ -16,7 +16,9 @@ Repo: [https://github.com/Mudit-Jxin7/noir](https://github.com/Mudit-Jxin7/noir)
 
 ## Prerequisites
 
-Install these once on your machine:
+For **binary installs**, you only need a modern terminal (iTerm2, Kitty, WezTerm, Ghostty, or Windows Terminal).
+
+To **build from source** or use `cargo install`, also install:
 
 1. **Git** — [https://git-scm.com/downloads](https://git-scm.com/downloads)
 2. **Rust (via rustup)** — [https://rustup.rs](https://rustup.rs)
@@ -28,34 +30,56 @@ source "$HOME/.cargo/env"
 rustc --version   # confirm it works
 ```
 
-A modern terminal with mouse support works best (iTerm2, Kitty, WezTerm, Ghostty, or Windows Terminal).
+## Install (recommended — no Rust needed)
 
-## Install (easiest)
+Download a prebuilt binary from the latest [GitHub Release](https://github.com/Mudit-Jxin7/noir/releases/latest).
 
-One command — no clone required. Rust/`cargo` must already be installed (see [Prerequisites](#prerequisites)).
+**macOS (Apple Silicon):**
+
+```bash
+curl -sL https://github.com/Mudit-Jxin7/noir/releases/latest/download/noir-v0.1.0-aarch64-apple-darwin.tar.gz | tar xz
+mkdir -p "$HOME/.local/bin"
+mv noir "$HOME/.local/bin/noir"
+# ensure ~/.local/bin is on your PATH, then:
+noir --help
+```
+
+**macOS (Intel):**
+
+```bash
+curl -sL https://github.com/Mudit-Jxin7/noir/releases/latest/download/noir-v0.1.0-x86_64-apple-darwin.tar.gz | tar xz
+mkdir -p "$HOME/.local/bin"
+mv noir "$HOME/.local/bin/noir"
+```
+
+**Linux (x86_64):**
+
+```bash
+curl -sL https://github.com/Mudit-Jxin7/noir/releases/latest/download/noir-v0.1.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
+mkdir -p "$HOME/.local/bin"
+mv noir "$HOME/.local/bin/noir"
+```
+
+> Replace `v0.1.0` with the newest tag from the [releases page](https://github.com/Mudit-Jxin7/noir/releases), or browse that page and download the matching `.tar.gz` for your machine.
+
+**Update:** download the newer release and overwrite `~/.local/bin/noir` the same way.
+
+### Install with Cargo (optional)
+
+Requires Rust ([rustup](https://rustup.rs)). No clone needed:
 
 ```bash
 cargo install --git https://github.com/Mudit-Jxin7/noir --locked
-```
-
-That builds noir and puts the `noir` binary on your PATH (usually `~/.cargo/bin`). Then:
-
-```bash
-noir --help
-noir .
-```
-
-Update later with the same command:
-
-```bash
+# update later:
 cargo install --git https://github.com/Mudit-Jxin7/noir --locked --force
 ```
 
 ## Build from source
 
-If you prefer a local checkout (or cargo install is unavailable):
+If you prefer a local checkout:
 
 ```bash
+# needs Rust via rustup
 git clone https://github.com/Mudit-Jxin7/noir.git
 cd noir
 cargo build --release
@@ -105,13 +129,21 @@ noir --theme dracula ~/path/to/repo
 5. Press `Ctrl+D` (editor focused) for a diff vs `HEAD`.
 6. Press `?` for the in-app cheat sheet, `Ctrl+Q` to quit.
 
-### Install tip (macOS / Linux)
-
-Prefer `cargo install --git …` above. If you built from source instead, either alias the binary or copy it onto PATH as in [Build from source](#build-from-source).
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for fork/clone, build, PR checklist, and issue reports.
+
+## Releasing (maintainers)
+
+Pushing a version tag builds binaries on GitHub Actions and attaches them to a Release:
+
+```bash
+# bump version in Cargo.toml if needed, commit, then:
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Assets appear at [Releases](https://github.com/Mudit-Jxin7/noir/releases) for macOS (arm64 + Intel) and Linux x86_64.
 
 ## Keybindings
 

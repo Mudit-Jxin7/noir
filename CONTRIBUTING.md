@@ -113,3 +113,16 @@ Open an issue at [github.com/Mudit-Jxin7/noir/issues](https://github.com/Mudit-J
 ## License
 
 By contributing, you agree that your contributions are licensed under the MIT license (same as the project).
+
+## Cutting a release
+
+1. Bump `version` in `Cargo.toml` if needed and commit.
+2. Tag and push:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+3. GitHub Actions (`.github/workflows/release.yml`) builds macOS arm64, macOS Intel, and Linux x86_64 binaries and attaches them to the Release.
+4. Confirm assets on the [Releases](https://github.com/Mudit-Jxin7/noir/releases) page.

@@ -15,6 +15,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 
 use crate::git::GitStatus;
+use crate::search::{FileIndex, SearchHit};
 use crate::term_pane::TermPane;
 use crate::theme::{PaletteId, Theme};
 use crate::tree::FileTree;
@@ -93,6 +94,11 @@ pub struct App {
     show_help: bool,
     show_themes: bool,
     theme_cursor: usize,
+    show_search: bool,
+    search_query: String,
+    search_cursor: usize,
+    search_hits: Vec<SearchHit>,
+    file_index: FileIndex,
     status: String,
 }
 
@@ -140,8 +146,45 @@ impl App {
             show_help: false,
             show_themes: false,
             theme_cursor: Theme::id().index(),
-            status: "Press ? help · Ctrl+P themes · click files".into(),
+            show_search: false,
+            search_query: String::new(),
+            search_cursor: 0,
+            search_hits: Vec::new(),
+            file_index: FileIndex::default(),
+            status: "Press ? help · Ctrl+O search · Ctrl+P themes".into(),
         })
+    }
+
+    fn open_search(&mut self) {
+        if self.file_index.is_stale(30) || self.file_index.paths.is_empty() {
+            self.file_index.rebuild(&self.root);
+        }
+        self.show_help = false;
+        self.show_themes = false;
+        self.show_search = true;
+        self.search_query.clear();
+        self.search_cursor = 0;
+        self.refresh_search_hits();
+        self.status = format!(
+            "Search files · {} indexed · type to filter",
+            self.file_index.paths.len()
+        );
+    }
+
+    fn refresh_search_hits(&mut self) {
+        self.search_hits = self.file_index.search(&self.root, &self.search_query, 40);
+        if self.search_cursor >= self.search_hits.len() {
+            self.search_cursor = self.search_hits.len().saturating_sub(1);
+        }
+    }
+
+    fn confirm_search(&mut self) {
+        let Some(hit) = self.search_hits.get(self.search_cursor).cloned() else {
+            self.status = "No matching files".into();
+            return;
+        };
+        self.show_search = false;
+        self.open_file(hit.abs);
     }
 
     fn active_term_mut(&mut self) -> &mut TermPane {
@@ -311,6 +354,8 @@ impl App {
                 WatchEvent::Changed(path) => {
                     touch_git = true;
                     self.viewer.reload_path(&path, &self.root);
+                    // Paths may have been added/removed — refresh on next search open
+                    self.file_index.built_at_invalidate();
                     if self.viewer.path().is_some_and(|p| p == &path) {
                         self.status = "● Reloaded from disk".into();
                     }
@@ -350,6 +395,45 @@ impl App {
                     self.show_help = false;
                     self.show_themes = true;
                     self.theme_cursor = Theme::id().index();
+                }
+                KeyCode::Char('o') | KeyCode::Char('f') => {
+                    self.open_search();
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if self.show_search {
+            match key.code {
+                KeyCode::Esc => {
+                    self.show_search = false;
+                    self.status = "Search closed".into();
+                }
+                KeyCode::Enter => self.confirm_search(),
+                KeyCode::Up => {
+                    if self.search_cursor > 0 {
+                        self.search_cursor -= 1;
+                    } else if !self.search_hits.is_empty() {
+                        self.search_cursor = self.search_hits.len() - 1;
+                    }
+                }
+                KeyCode::Down => {
+                    if !self.search_hits.is_empty() {
+                        self.search_cursor = (self.search_cursor + 1) % self.search_hits.len();
+                    }
+                }
+                KeyCode::Backspace => {
+                    self.search_query.pop();
+                    self.search_cursor = 0;
+                    self.refresh_search_hits();
+                }
+                KeyCode::Char(c) if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) => {
+                    if !c.is_control() {
+                        self.search_query.push(c);
+                        self.search_cursor = 0;
+                        self.refresh_search_hits();
+                    }
                 }
                 _ => {}
             }
@@ -397,6 +481,11 @@ impl App {
             || (key.code == KeyCode::Char('?') && self.focus != Focus::Terminal)
         {
             self.show_help = true;
+            return;
+        }
+
+        if ctrl && key.code == KeyCode::Char('o') {
+            self.open_search();
             return;
         }
 
@@ -915,6 +1004,9 @@ impl App {
         if self.show_themes {
             self.draw_themes(f, f.area());
         }
+        if self.show_search {
+            self.draw_search(f, f.area());
+        }
     }
 
     fn draw_titlebar(&self, f: &mut Frame<'_>, area: Rect) {
@@ -947,7 +1039,7 @@ impl App {
             ),
             Span::styled(tip, Style::default().fg(Theme::get().accent_glow).bg(Theme::get().titlebar)),
             Span::styled(
-                "  ? help  ·  Ctrl+P themes  ·  Ctrl+T switch  ",
+                "  ? help  ·  Ctrl+O search  ·  Ctrl+P themes  ",
                 Style::default().fg(Theme::get().fg_muted).bg(Theme::get().titlebar),
             ),
         ]);
@@ -1466,7 +1558,7 @@ impl App {
 
     fn draw_help(&self, f: &mut Frame<'_>, area: Rect) {
         let width = area.width.min(72).max(40);
-        let height = area.height.min(22).max(14);
+        let height = area.height.min(24).max(16);
         let x = area.x + area.width.saturating_sub(width) / 2;
         let y = area.y + area.height.saturating_sub(height) / 2;
         let popup = Rect {
@@ -1518,8 +1610,9 @@ impl App {
             Line::from("  Ctrl+T   switch panel     Esc      leave terminal"),
             Line::from("  Ctrl+N   new terminal     Ctrl+W   close tab"),
             Line::from("  Ctrl+D   git diff         Ctrl+B   hide files"),
-            Line::from("  Ctrl+Q   quit             F1 / ?   this help"),
+            Line::from("  Ctrl+O   search files     Ctrl+Q   quit"),
             Line::from("  Ctrl+P   color themes     Ctrl+0   cycle theme"),
+            Line::from("  F1 / ?   this help        o / f    open search"),
             Line::from(""),
             Line::from(Span::styled(
                 format!("  Current theme: {}", Theme::id().name()),
@@ -1530,6 +1623,93 @@ impl App {
                 Style::default().fg(Theme::get().fg_dim),
             )),
         ];
+        f.render_widget(Paragraph::new(lines), inner);
+    }
+
+    fn draw_search(&self, f: &mut Frame<'_>, area: Rect) {
+        let width = area.width.min(78).max(42);
+        let list_h = (self.search_hits.len() as u16).clamp(3, 16);
+        let height = (list_h + 7).min(area.height.saturating_sub(2)).max(10);
+        let x = area.x + area.width.saturating_sub(width) / 2;
+        let y = area.y + area.height.saturating_sub(height) / 2;
+        let popup = Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+
+        f.render_widget(Clear, popup);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Theme::get().accent_glow))
+            .style(Style::default().bg(Theme::get().sidebar).fg(Theme::get().fg))
+            .title(Span::styled(
+                "  Search files  ·  Enter open  ·  Esc  ",
+                Style::default()
+                    .fg(Theme::get().bg)
+                    .bg(Theme::get().accent_glow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        let inner = block.inner(popup);
+        f.render_widget(block, popup);
+
+        let query_display = if self.search_query.is_empty() {
+            "▌".to_string()
+        } else {
+            format!("{}▌", self.search_query)
+        };
+        let mut lines: Vec<Line> = vec![
+            Line::from(Span::styled(
+                format!("  > {query_display}"),
+                Style::default()
+                    .fg(Theme::get().accent_glow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                format!(
+                    "  {} / {} files",
+                    self.search_hits.len(),
+                    self.file_index.paths.len()
+                ),
+                Style::default().fg(Theme::get().fg_dim),
+            )),
+            Line::from(""),
+        ];
+
+        if self.search_hits.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  No matches",
+                Style::default().fg(Theme::get().fg_muted),
+            )));
+        } else {
+            let max_rows = inner.height.saturating_sub(4) as usize;
+            let start = self
+                .search_cursor
+                .saturating_sub(max_rows.saturating_sub(1) / 2)
+                .min(self.search_hits.len().saturating_sub(max_rows));
+            for (i, hit) in self
+                .search_hits
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(max_rows)
+            {
+                let selected = i == self.search_cursor;
+                let mark = if selected { "›" } else { " " };
+                let label = format!("  {mark} {}  ", hit.rel);
+                let style = if selected {
+                    Style::default()
+                        .bg(Theme::get().selection)
+                        .fg(Theme::get().accent_glow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Theme::file_color(&hit.rel))
+                };
+                lines.push(Line::from(Span::styled(label, style)));
+            }
+        }
+
         f.render_widget(Paragraph::new(lines), inner);
     }
 

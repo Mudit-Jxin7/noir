@@ -12,13 +12,14 @@ Terminal IDE for Codex workflows: file tree, read-only viewer, and embedded shel
 
 ## Install
 
-**Binary** (no Rust) — grab the archive for your OS from [Releases](https://github.com/Mudit-Jxin7/noir/releases/latest), then:
+**Binary** (no Rust) — download for your OS from [Releases](https://github.com/Mudit-Jxin7/noir/releases/latest):
 
 ```bash
 tar -xzf noir-*.tar.gz
 mkdir -p ~/.local/bin && mv noir ~/.local/bin/
-noir .
 ```
+
+Make sure `~/.local/bin` is on your PATH (restart the terminal if `noir` is not found).
 
 | Platform | Asset |
 |---|---|
@@ -34,16 +35,26 @@ cargo install --git https://github.com/Mudit-Jxin7/noir --locked
 
 ## Usage
 
+Install once, then from any project folder:
+
 ```bash
-noir .                          # open current folder
-noir ~/path/to/repo             # open a repo
-noir -c /bin/zsh ~/path/to/repo # custom shell
-noir --theme dracula .          # theme: github-dark, dracula, catppuccin, nord, tokyo-night, gruvbox, one-dark, solarized
+cd ~/my-project
+noir
 ```
+
+That opens the current directory. You can also pass a path:
+
+```bash
+noir ~/path/to/repo
+noir -c /bin/zsh .
+noir --theme dracula
+```
+
+Themes: `github-dark`, `dracula`, `catppuccin`, `nord`, `tokyo-night`, `gruvbox`, `one-dark`, `solarized`.
 
 1. Click a file to open it  
 2. Click the terminal pane and run `codex`  
-3. Files reload on save · `Ctrl+D` for diff · `?` for help · `Ctrl+Q` to quit  
+3. Files reload on save · `Ctrl+D` for diff · `Ctrl+O` search files · `?` for help · `Ctrl+Q` to quit  
 
 ## Keybindings
 
@@ -57,6 +68,7 @@ noir --theme dracula .          # theme: github-dark, dracula, catppuccin, nord,
 | `Ctrl+T` | Cycle focus |
 | `Ctrl+D` | Diff vs `HEAD` |
 | `Ctrl+P` / `Ctrl+0` | Theme picker / cycle |
+| `Ctrl+O` | Search files (fuzzy) |
 | `Ctrl+Q` | Quit |
 
 ## Benchmarks

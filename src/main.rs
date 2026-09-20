@@ -1,5 +1,6 @@
 mod app;
 mod git;
+mod search;
 mod term_pane;
 mod theme;
 mod tree;

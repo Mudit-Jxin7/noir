@@ -684,6 +684,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "noir"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossterm",
+ "ignore",
+ "notify",
+ "portable-pty",
+ "ratatui",
+ "syntect",
+ "unicode-width 0.2.0",
+ "vt100",
+ "walkdir",
+]
+
+[[package]]
 name = "notify"
 version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1136,23 +1153,6 @@ dependencies = [
  "thiserror 2.0.20",
  "walkdir",
  "yaml-rust",
-]
-
-[[package]]
-name = "noir"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crossterm",
- "ignore",
- "notify",
- "portable-pty",
- "ratatui",
- "syntect",
- "unicode-width 0.2.0",
- "vt100",
- "walkdir",
 ]
 
 [[package]]

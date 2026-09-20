@@ -2,6 +2,8 @@
 
 Lightweight terminal IDE for Codex workflows: **clickable file tree**, **read-only code/diff viewer**, and an **embedded terminal** — without Electron.
 
+Repo: [https://github.com/Mudit-Jxin7/noir](https://github.com/Mudit-Jxin7/noir)
+
 ## Features (MVP)
 
 - VS Code–style dark chrome (title bar, tabs, status bar)
@@ -12,22 +14,108 @@ Lightweight terminal IDE for Codex workflows: **clickable file tree**, **read-on
 - **Multiple terminals** — click `+`, or `Ctrl+N` / `Ctrl+\``
 - Mouse + keyboard navigation
 
-## Install / run
+## Prerequisites
+
+Install these once on your machine:
+
+1. **Git** — [https://git-scm.com/downloads](https://git-scm.com/downloads)
+2. **Rust (via rustup)** — [https://rustup.rs](https://rustup.rs)
 
 ```bash
-# needs Rust (rustup)
+# macOS / Linux
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustc --version   # confirm it works
+```
+
+A modern terminal with mouse support works best (iTerm2, Kitty, WezTerm, Ghostty, or Windows Terminal).
+
+## Setup from scratch
+
+Use this if you are installing noir on a new computer.
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/Mudit-Jxin7/noir.git
+cd noir
+
+# 2. Build a release binary
 cargo build --release
-./target/release/noir /path/to/repo
 
-# or
-cargo run --release -- .
+# 3. (Optional) put `noir` on your PATH
+cp target/release/noir "$HOME/.local/bin/noir"
+# ensure ~/.local/bin is on PATH, then:
+noir --help
 ```
 
-Optional shell:
+If you prefer not to copy the binary, run it directly:
 
 ```bash
-noir -c /bin/zsh ~/path/to/repo
+./target/release/noir /path/to/your/project
 ```
+
+## Local development setup
+
+For contributing or hacking on noir itself:
+
+```bash
+git clone https://github.com/Mudit-Jxin7/noir.git
+cd noir
+
+# debug build (faster compile, slower runtime)
+cargo run -- .
+
+# release build while developing
+cargo run --release -- /path/to/repo
+
+# run tests / check compile
+cargo check
+cargo build --release
+```
+
+Rebuild after pulling changes:
+
+```bash
+git pull
+cargo build --release
+```
+
+## How to use
+
+### Open a project
+
+```bash
+# current directory
+noir .
+
+# any repo / folder
+noir ~/path/to/repo
+
+# custom shell in the terminal pane
+noir -c /bin/zsh ~/path/to/repo
+
+# start with a color theme
+noir --theme dracula ~/path/to/repo
+```
+
+### Typical workflow
+
+1. Launch noir on your project root.
+2. Click a file in the left **Explorer** to open it (read-only, syntax highlighted).
+3. Click the bottom **Terminal** pane and run your agent / shell, e.g. `codex`.
+4. When the agent saves a file, the viewer reloads automatically.
+5. Press `Ctrl+D` (editor focused) for a diff vs `HEAD`.
+6. Press `?` for the in-app cheat sheet, `Ctrl+Q` to quit.
+
+### Install tip (macOS / Linux)
+
+After `cargo build --release`, you can alias it in your shell config:
+
+```bash
+alias noir="$HOME/path/to/noir/target/release/noir"
+```
+
+Or copy the binary somewhere on your `PATH` as shown in [Setup from scratch](#setup-from-scratch).
 
 ## Keybindings
 
@@ -71,3 +159,7 @@ Single Rust binary. Expect tens of MB RSS idle — not gigabytes.
 │ Terminal — run `codex` here                │
 └────────────────────────────────────────────┘
 ```
+
+## License
+
+MIT

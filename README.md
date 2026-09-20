@@ -30,54 +30,52 @@ rustc --version   # confirm it works
 
 A modern terminal with mouse support works best (iTerm2, Kitty, WezTerm, Ghostty, or Windows Terminal).
 
-## Setup from scratch
+## Install (easiest)
 
-Use this if you are installing noir on a new computer.
+One command — no clone required. Rust/`cargo` must already be installed (see [Prerequisites](#prerequisites)).
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/Mudit-Jxin7/noir.git
-cd noir
-
-# 2. Build a release binary
-cargo build --release
-
-# 3. (Optional) put `noir` on your PATH
-cp target/release/noir "$HOME/.local/bin/noir"
-# ensure ~/.local/bin is on PATH, then:
-noir --help
+cargo install --git https://github.com/Mudit-Jxin7/noir --locked
 ```
 
-If you prefer not to copy the binary, run it directly:
+That builds noir and puts the `noir` binary on your PATH (usually `~/.cargo/bin`). Then:
 
 ```bash
+noir --help
+noir .
+```
+
+Update later with the same command:
+
+```bash
+cargo install --git https://github.com/Mudit-Jxin7/noir --locked --force
+```
+
+## Build from source
+
+If you prefer a local checkout (or cargo install is unavailable):
+
+```bash
+git clone https://github.com/Mudit-Jxin7/noir.git
+cd noir
+cargo build --release
 ./target/release/noir /path/to/your/project
 ```
 
-## Local development setup
+Optional: copy onto PATH
 
-For contributing or hacking on noir itself:
+```bash
+cp target/release/noir "$HOME/.local/bin/noir"
+```
+
+## Local development
+
+For hacking on noir itself, see [CONTRIBUTING.md](CONTRIBUTING.md). Quick start:
 
 ```bash
 git clone https://github.com/Mudit-Jxin7/noir.git
 cd noir
-
-# debug build (faster compile, slower runtime)
-cargo run -- .
-
-# release build while developing
-cargo run --release -- /path/to/repo
-
-# run tests / check compile
-cargo check
-cargo build --release
-```
-
-Rebuild after pulling changes:
-
-```bash
-git pull
-cargo build --release
+cargo run --release -- .
 ```
 
 ## How to use
@@ -109,13 +107,11 @@ noir --theme dracula ~/path/to/repo
 
 ### Install tip (macOS / Linux)
 
-After `cargo build --release`, you can alias it in your shell config:
+Prefer `cargo install --git …` above. If you built from source instead, either alias the binary or copy it onto PATH as in [Build from source](#build-from-source).
 
-```bash
-alias noir="$HOME/path/to/noir/target/release/noir"
-```
+## Contributing
 
-Or copy the binary somewhere on your `PATH` as shown in [Setup from scratch](#setup-from-scratch).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for fork/clone, build, PR checklist, and issue reports.
 
 ## Keybindings
 

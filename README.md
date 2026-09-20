@@ -52,7 +52,7 @@ noir -c /bin/zsh .
 noir --theme dracula
 ```
 
-Themes: `github-dark`, `dracula`, `catppuccin`, `nord`, `tokyo-night`, `gruvbox`, `one-dark`, `solarized`.
+Themes: `cursor` (default), `github-dark`, `dracula`, `catppuccin`, `nord`, `tokyo-night`, `gruvbox`, `one-dark`, `solarized`.
 
 1. Click a file to open it  
 2. Click the terminal pane and run `codex`  

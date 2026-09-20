@@ -75,9 +75,9 @@ impl FileViewer {
 
     pub fn mode_label(&self) -> &'static str {
         match self.mode() {
-            ViewMode::File => "EDITOR",
+            ViewMode::File => "editor",
             ViewMode::Diff(kind) => kind.label(),
-            ViewMode::Blame => "BLAME",
+            ViewMode::Blame => "blame",
         }
     }
 

@@ -14,9 +14,9 @@ pub enum DiffKind {
 impl DiffKind {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Head => "DIFF",
-            Self::Unstaged => "UNSTAGED",
-            Self::Staged => "STAGED",
+            Self::Head => "diff",
+            Self::Unstaged => "unstaged",
+            Self::Staged => "staged",
         }
     }
 

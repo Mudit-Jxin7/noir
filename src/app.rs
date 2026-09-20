@@ -11,7 +11,7 @@ use crossterm::event::{
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
 use ratatui::{Frame, Terminal};
 
 use crate::git::{DiffKind, GitBranch, GitEntry, GitStatus};
@@ -189,7 +189,7 @@ impl App {
             search_cursor: 0,
             search_hits: Vec::new(),
             file_index: FileIndex::default(),
-            status: "Press ? help · Ctrl+O search · Ctrl+P themes".into(),
+            status: "? help · Ctrl+O search · Ctrl+P themes".into(),
         })
     }
 
@@ -1409,17 +1409,8 @@ impl App {
         });
         let h_focused = matches!(self.hover, Some(HitKind::HSplit))
             || matches!(self.drag, Some(DragKind::HSplit));
-        let h_label = if h_focused {
-            let msg = "  ↕ drag to resize terminal  ";
-            let pad = main[1].width as usize;
-            let mut s = format!("{:═^width$}", msg, width = pad.max(msg.len()));
-            if s.len() > pad {
-                s.truncate(pad);
-            }
-            s
-        } else {
-            "═".repeat(main[1].width as usize)
-        };
+        let ch = if h_focused { "━" } else { "─" };
+        let h_label = ch.repeat(main[1].width as usize);
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 h_label,
@@ -1429,7 +1420,7 @@ impl App {
                     } else {
                         Theme::get().border
                     })
-                    .bg(Theme::get().titlebar),
+                    .bg(Theme::get().bg),
             ))),
             main[1],
         );
@@ -1508,7 +1499,7 @@ impl App {
                 height: 1,
             };
             f.render_widget(
-                Paragraph::new("║").style(Style::default().fg(fg).bg(Theme::get().titlebar)),
+                Paragraph::new("│").style(Style::default().fg(fg).bg(Theme::get().bg)),
                 cell,
             );
         }
@@ -1523,30 +1514,25 @@ impl App {
         let branch = if self.branch.is_empty() {
             String::new()
         } else {
-            format!("   {} ", self.branch)
-        };
-        let tip = match self.focus {
-            Focus::Tree if self.show_git => "  git · Ctrl+G files   ",
-            Focus::Tree => "  1. click a file   ",
-            Focus::Viewer => "  2. read / Ctrl+D diff   ",
-            Focus::Terminal => "  3. type codex / claude   ",
+            format!(" ·  {}", self.branch)
         };
         let line = Line::from(vec![
             Span::styled(
-                "  ◆ noir  ",
+                " noir ",
                 Style::default()
-                    .fg(Theme::get().status_fg)
-                    .bg(Theme::get().accent)
+                    .fg(Theme::get().accent)
+                    .bg(Theme::get().titlebar)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("  {name}{branch}"),
+                format!(" {name}{branch} "),
                 Style::default().fg(Theme::get().fg).bg(Theme::get().titlebar),
             ),
-            Span::styled(tip, Style::default().fg(Theme::get().accent_glow).bg(Theme::get().titlebar)),
             Span::styled(
-                "  ? help  ·  Ctrl+G git  ·  Ctrl+O search  ",
-                Style::default().fg(Theme::get().fg_muted).bg(Theme::get().titlebar),
+                "  ? help",
+                Style::default()
+                    .fg(Theme::get().fg_muted)
+                    .bg(Theme::get().titlebar),
             ),
         ]);
         f.render_widget(
@@ -1571,23 +1557,8 @@ impl App {
             .border_style(Theme::border(focused))
             .style(Theme::sidebar())
             .title(Span::styled(
-                format!("  GIT  ·  {branch}  ·  {tab}  "),
+                format!(" git · {branch} · {tab} "),
                 Theme::title(focused),
-            ))
-            .title_bottom(Span::styled(
-                if focused {
-                    match self.git_tab {
-                        GitPaneTab::Changes => {
-                            "  s stage · u unstage · d/D diff · Tab branches  "
-                        }
-                        GitPaneTab::Branches => "  Enter checkout · Tab changes · Esc files  ",
-                    }
-                } else {
-                    "  Ctrl+G git pane  "
-                },
-                Style::default()
-                    .fg(Theme::get().fg_muted)
-                    .bg(Theme::get().sidebar),
             ));
 
         let inner = block.inner(area);
@@ -1746,15 +1717,7 @@ impl App {
             .borders(Borders::ALL)
             .border_style(Theme::border(focused))
             .style(Theme::sidebar())
-            .title(Span::styled("  FILES  ", Theme::title(focused)))
-            .title_bottom(Span::styled(
-                if focused {
-                    "  ↑↓ move  ·  Enter open  ·  click OK  "
-                } else {
-                    "  click a file to open  "
-                },
-                Style::default().fg(Theme::get().fg_muted).bg(Theme::get().sidebar),
-            ));
+            .title(Span::styled(" files ", Theme::title(focused)));
 
         let inner = block.inner(area);
         self.tree_inner = inner;
@@ -1864,18 +1827,7 @@ impl App {
             .borders(Borders::ALL)
             .border_style(Theme::border(focused))
             .style(Theme::bg())
-            .title(Span::styled(
-                format!("  {mode}  ·  click × to close tabs  "),
-                Theme::title(focused),
-            ))
-            .title_bottom(Span::styled(
-                if focused {
-                    "  scroll  ·  Ctrl+D cycle diff  ·  l blame  ·  Ctrl+W close  "
-                } else {
-                    "  click here to focus editor  "
-                },
-                Style::default().fg(Theme::get().fg_muted).bg(Theme::get().bg),
-            ));
+            .title(Span::styled(format!(" {mode} "), Theme::title(focused)));
 
         let inner = block.inner(area);
         f.render_widget(block, area);
@@ -1893,8 +1845,10 @@ impl App {
         let mut x = tab_area.x;
         if self.viewer.tabs.is_empty() {
             spans.push(Span::styled(
-                "  ← click a file on the left to get started  ",
-                Style::default().fg(Theme::get().accent_glow).bg(Theme::get().tab_bar),
+                "  open a file from the sidebar  ",
+                Style::default()
+                    .fg(Theme::get().fg_muted)
+                    .bg(Theme::get().tab_bar),
             ));
         } else {
             for (i, tab) in self.viewer.tabs.iter().enumerate() {
@@ -1981,51 +1935,13 @@ impl App {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(if focused {
-                Style::default()
-                    .fg(Theme::get().accent_glow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Theme::border(false)
-            })
+            .border_style(Theme::border(focused))
             .style(Theme::panel())
             .title(Span::styled(
-                if focused {
-                    format!("  ● TERMINAL (typing)  ·  {count}  ")
-                } else {
-                    format!("  TERMINAL  ·  click to type  ·  {count}  ")
-                },
-                if focused {
-                    Style::default()
-                        .fg(Theme::get().bg)
-                        .bg(Theme::get().accent_glow)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Theme::title(false)
-                },
+                format!(" terminal · {count} "),
+                Theme::title(focused),
             ))
-            .title_alignment(Alignment::Left)
-            .title_bottom(Span::styled(
-                if focused {
-                    match self.term_dock {
-                        TermDock::Bottom => {
-                            "  Esc leave  ·  Ctrl+E dock right  ·  [x] close  ·  ＋ new  "
-                        }
-                        TermDock::Right => {
-                            "  Esc leave  ·  Ctrl+E dock bottom  ·  [x] close  ·  ＋ new  "
-                        }
-                    }
-                } else {
-                    "  click this panel → run  codex  or  claude  "
-                },
-                Style::default()
-                    .fg(if focused {
-                        Theme::get().accent_glow
-                    } else {
-                        Theme::get().fg_muted
-                    })
-                    .bg(Theme::get().panel),
-            ));
+            .title_alignment(Alignment::Left);
 
         let inner = block.inner(area);
         f.render_widget(block, area);
@@ -2034,14 +1950,12 @@ impl App {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(1), // tabs
-                Constraint::Length(1), // agent hint strip
                 Constraint::Min(2),    // body
             ])
             .split(inner);
 
         let tab_area = parts[0];
-        let hint_area = parts[1];
-        self.term_body_area = parts[2];
+        self.term_body_area = parts[1];
 
         let mut spans = Vec::new();
         let mut x = tab_area.x;
@@ -2104,15 +2018,17 @@ impl App {
             x = x.saturating_add(3);
         }
 
-        let plus = "  + New  ";
+        let plus = "  +  ";
         let plus_w = unicode_width::UnicodeWidthStr::width(plus) as u16;
         let plus_style = if matches!(self.hover, Some(HitKind::TermNew)) {
             Style::default()
-                .fg(Theme::get().status_fg)
-                .bg(Theme::get().accent_glow)
+                .fg(Theme::get().accent_glow)
+                .bg(Theme::get().tab_bar)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Theme::button()
+            Style::default()
+                .fg(Theme::get().fg_muted)
+                .bg(Theme::get().tab_bar)
         };
         spans.push(Span::styled(plus, plus_style));
         self.hits.push(Hit {
@@ -2128,41 +2044,6 @@ impl App {
         f.render_widget(
             Paragraph::new(Line::from(spans)).style(Theme::tab_bar()),
             tab_area,
-        );
-
-        // Clear one-line coaching strip
-        let hint = if focused {
-            Line::from(vec![
-                Span::styled(
-                    "  READY  ",
-                    Style::default()
-                        .fg(Theme::get().bg)
-                        .bg(Theme::get().git_add)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    "  type a command — try:  codex    or    claude  ",
-                    Style::default().fg(Theme::get().fg).bg(Theme::get().panel_elevated),
-                ),
-            ])
-        } else {
-            Line::from(vec![
-                Span::styled(
-                    "  CLICK HERE  ",
-                    Style::default()
-                        .fg(Theme::get().bg)
-                        .bg(Theme::get().accent)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    "  to focus the terminal and run your agent  ",
-                    Style::default().fg(Theme::get().fg).bg(Theme::get().panel_elevated),
-                ),
-            ])
-        };
-        f.render_widget(
-            Paragraph::new(hint).style(Style::default().bg(Theme::get().panel_elevated)),
-            hint_area,
         );
 
         self.hits.push(Hit {
@@ -2195,55 +2076,48 @@ impl App {
 
     fn draw_status(&self, f: &mut Frame<'_>, area: Rect) {
         let focus = match self.focus {
-            Focus::Tree if self.show_git => "GIT",
-            Focus::Tree => "FILES",
+            Focus::Tree if self.show_git => "git",
+            Focus::Tree => "files",
             Focus::Viewer => self.viewer.mode_label(),
-            Focus::Terminal => "TERMINAL",
+            Focus::Terminal => "terminal",
         };
         let tip = match self.focus {
-            Focus::Tree if self.show_git => "s/u stage · Tab branches · l blame",
-            Focus::Tree => "Enter/click open file",
-            Focus::Viewer => "Ctrl+D cycle diff · l blame · Ctrl+W",
-            Focus::Terminal => "Esc leave · Ctrl+N new tab",
+            Focus::Tree if self.show_git => "s/u stage · Tab branches · ? help",
+            Focus::Tree => "Enter open · Ctrl+G git · ? help",
+            Focus::Viewer => "Ctrl+D diff · l blame · ? help",
+            Focus::Terminal => "Esc leave · Ctrl+N new · Ctrl+E dock",
         };
         let branch = if self.branch.is_empty() {
-            "no git".into()
+            String::new()
         } else {
-            format!(" {}", self.branch)
+            format!(" {}  ·  ", self.branch)
         };
 
         let line = Line::from(vec![
             Span::styled(
-                format!("  {focus}  "),
+                format!(" {focus} "),
                 Style::default()
-                    .fg(Theme::get().status_fg)
-                    .bg(Theme::get().accent)
+                    .fg(Theme::get().accent)
+                    .bg(Theme::get().titlebar)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("  {tip}  "),
-                Style::default().fg(Theme::get().fg).bg(Theme::get().accent_soft),
+                format!(" {tip} "),
+                Style::default()
+                    .fg(Theme::get().fg_muted)
+                    .bg(Theme::get().titlebar),
             ),
-            if self.pointer_on {
-                Span::styled(
-                    "  clickable  ",
-                    Style::default()
-                        .fg(Theme::get().bg)
-                        .bg(Theme::get().accent_glow)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::styled(
-                    "  ? help  ",
-                    Style::default().fg(Theme::get().fg_dim).bg(Theme::get().accent_soft),
-                )
-            },
             Span::styled(
-                format!("  {branch}  ·  {}  ", self.status),
-                Theme::status(),
+                format!(" {branch}{} ", self.status),
+                Style::default()
+                    .fg(Theme::get().fg_dim)
+                    .bg(Theme::get().titlebar),
             ),
         ]);
-        f.render_widget(Paragraph::new(line).wrap(Wrap { trim: false }), area);
+        f.render_widget(
+            Paragraph::new(line).style(Style::default().bg(Theme::get().titlebar)),
+            area,
+        );
     }
 
     fn draw_help(&self, f: &mut Frame<'_>, area: Rect) {
@@ -2264,10 +2138,10 @@ impl App {
             .border_style(Style::default().fg(Theme::get().accent_glow))
             .style(Style::default().bg(Theme::get().sidebar).fg(Theme::get().fg))
             .title(Span::styled(
-                "  Quick help  ·  Esc to close  ",
+                " help · Esc ",
                 Style::default()
-                    .fg(Theme::get().bg)
-                    .bg(Theme::get().accent_glow)
+                    .fg(Theme::get().accent_glow)
+                    .bg(Theme::get().sidebar)
                     .add_modifier(Modifier::BOLD),
             ));
         let inner = block.inner(popup);
@@ -2275,27 +2149,25 @@ impl App {
 
         let lines = vec![
             Line::from(Span::styled(
-                "  How to use noir",
+                "  noir",
                 Style::default()
                     .fg(Theme::get().accent_glow)
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from("  1. Click a file in FILES (left) to open it"),
-            Line::from("  2. Read it in EDITOR — click [x] to close a tab"),
-            Line::from("  3. Click TERMINAL and run:  codex"),
+            Line::from("  open a file · read in the editor · run your agent in the terminal"),
             Line::from(""),
             Line::from(Span::styled(
-                "  Mouse",
-                Style::default().fg(Theme::get().git_add).add_modifier(Modifier::BOLD),
+                "  mouse",
+                Style::default().fg(Theme::get().fg_dim).add_modifier(Modifier::BOLD),
             )),
-            Line::from("  · Click folders to expand · files to open"),
-            Line::from("  · Drag ║ or ═ bars to resize panels"),
-            Line::from("  · Click [x] to close · + New for a terminal"),
+            Line::from("  · click folders to expand · files to open"),
+            Line::from("  · drag │ or ─ to resize panels"),
+            Line::from("  · click [x] to close · + for a new terminal"),
             Line::from(""),
             Line::from(Span::styled(
-                "  Keyboard",
-                Style::default().fg(Theme::get().git_add).add_modifier(Modifier::BOLD),
+                "  keyboard",
+                Style::default().fg(Theme::get().fg_dim).add_modifier(Modifier::BOLD),
             )),
             Line::from("  Ctrl+T   switch panel     Esc      leave terminal"),
             Line::from("  Ctrl+N   new terminal     Ctrl+W   close tab"),
@@ -2307,19 +2179,19 @@ impl App {
             Line::from("  F1 / ?   this help        o / f    open search"),
             Line::from(""),
             Line::from(Span::styled(
-                "  Git pane (Ctrl+G)",
-                Style::default().fg(Theme::get().git_add).add_modifier(Modifier::BOLD),
+                "  git pane (Ctrl+G)",
+                Style::default().fg(Theme::get().fg_dim).add_modifier(Modifier::BOLD),
             )),
             Line::from("  · s / Space stage · u unstage · d unstaged · D staged"),
             Line::from("  · Tab / b branches · Enter checkout · l blame · Esc files"),
             Line::from(""),
             Line::from(Span::styled(
-                format!("  Current theme: {}", Theme::id().name()),
-                Style::default().fg(Theme::get().accent_glow),
+                format!("  theme · {}", Theme::id().name()),
+                Style::default().fg(Theme::get().fg_muted),
             )),
             Line::from(Span::styled(
-                "  Tip: dock the terminal right (Ctrl+E) like a chat panel — or bottom.",
-                Style::default().fg(Theme::get().fg_dim),
+                "  Ctrl+E docks the terminal right or bottom",
+                Style::default().fg(Theme::get().fg_muted),
             )),
         ];
         f.render_widget(Paragraph::new(lines), inner);
@@ -2344,10 +2216,10 @@ impl App {
             .border_style(Style::default().fg(Theme::get().accent_glow))
             .style(Style::default().bg(Theme::get().sidebar).fg(Theme::get().fg))
             .title(Span::styled(
-                "  Search files  ·  Enter open  ·  Esc  ",
+                " search · Enter · Esc ",
                 Style::default()
-                    .fg(Theme::get().bg)
-                    .bg(Theme::get().accent_glow)
+                    .fg(Theme::get().accent_glow)
+                    .bg(Theme::get().sidebar)
                     .add_modifier(Modifier::BOLD),
             ));
         let inner = block.inner(popup);
@@ -2430,10 +2302,10 @@ impl App {
             .border_style(Style::default().fg(Theme::get().accent_glow))
             .style(Style::default().bg(Theme::get().sidebar).fg(Theme::get().fg))
             .title(Span::styled(
-                "  Color themes  ·  Enter select  ·  Esc  ",
+                " themes · Enter · Esc ",
                 Style::default()
-                    .fg(Theme::get().bg)
-                    .bg(Theme::get().accent_glow)
+                    .fg(Theme::get().accent_glow)
+                    .bg(Theme::get().sidebar)
                     .add_modifier(Modifier::BOLD),
             ));
         let inner = block.inner(popup);
@@ -2441,8 +2313,8 @@ impl App {
 
         let mut lines: Vec<Line> = vec![
             Line::from(Span::styled(
-                "  Pick a palette (also: Ctrl+0 to cycle)",
-                Style::default().fg(Theme::get().fg_dim),
+                "  Ctrl+0 cycles · Enter selects",
+                Style::default().fg(Theme::get().fg_muted),
             )),
             Line::from(""),
         ];
@@ -2474,7 +2346,7 @@ fn welcome_lines() -> Vec<Line<'static>> {
     vec![
         Line::from(""),
         Line::from(Span::styled(
-            "   Get started in 3 clicks",
+            "   noir",
             Style::default()
                 .fg(Theme::get().accent_glow)
                 .bg(Theme::get().bg)
@@ -2482,25 +2354,13 @@ fn welcome_lines() -> Vec<Line<'static>> {
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "   1.  Click a file on the left",
-            Style::default().fg(Theme::get().fg).bg(Theme::get().bg),
-        )),
-        Line::from(Span::styled(
-            "   2.  Read it here (tabs stay open)",
-            Style::default().fg(Theme::get().fg).bg(Theme::get().bg),
-        )),
-        Line::from(Span::styled(
-            "   3.  Click TERMINAL → type  codex",
-            Style::default().fg(Theme::get().fg).bg(Theme::get().bg),
+            "   open a file · focus the terminal · run your agent",
+            Style::default().fg(Theme::get().fg_dim).bg(Theme::get().bg),
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "   Ctrl+E docks the terminal right (like chat) or bottom",
-            Style::default().fg(Theme::get().fg_dim).bg(Theme::get().bg),
-        )),
-        Line::from(Span::styled(
-            "   Press  ?  anytime for the full cheat sheet",
-            Style::default().fg(Theme::get().fg_dim).bg(Theme::get().bg),
+            "   Ctrl+E dock terminal   ·   ? help",
+            Style::default().fg(Theme::get().fg_muted).bg(Theme::get().bg),
         )),
     ]
 }

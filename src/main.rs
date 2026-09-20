@@ -33,7 +33,7 @@ struct Cli {
     #[arg(long, short = 'c')]
     shell: Option<String>,
 
-    /// Color theme: github-dark, dracula, catppuccin, nord, tokyo-night, gruvbox, one-dark, solarized
+    /// Color theme: cursor, github-dark, dracula, catppuccin, nord, tokyo-night, gruvbox, one-dark, solarized
     #[arg(long, short = 't')]
     theme: Option<String>,
 }
@@ -51,7 +51,7 @@ fn main() -> Result<()> {
             crate::theme::Theme::set(id);
         } else {
             eprintln!(
-                "Unknown theme '{name}'. Options: github-dark, dracula, catppuccin, nord, tokyo-night, gruvbox, one-dark, solarized"
+                "Unknown theme '{name}'. Options: cursor, github-dark, dracula, catppuccin, nord, tokyo-night, gruvbox, one-dark, solarized"
             );
             std::process::exit(2);
         }

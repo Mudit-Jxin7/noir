@@ -8,6 +8,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteId {
+    CursorDark,
     GitHubDark,
     Dracula,
     Catppuccin,
@@ -19,7 +20,8 @@ pub enum PaletteId {
 }
 
 impl PaletteId {
-    pub const ALL: [PaletteId; 8] = [
+    pub const ALL: [PaletteId; 9] = [
+        PaletteId::CursorDark,
         PaletteId::GitHubDark,
         PaletteId::Dracula,
         PaletteId::Catppuccin,
@@ -32,6 +34,7 @@ impl PaletteId {
 
     pub fn name(self) -> &'static str {
         match self {
+            PaletteId::CursorDark => "Cursor Dark",
             PaletteId::GitHubDark => "GitHub Dark",
             PaletteId::Dracula => "Dracula",
             PaletteId::Catppuccin => "Catppuccin Mocha",
@@ -45,6 +48,7 @@ impl PaletteId {
 
     pub fn id(self) -> &'static str {
         match self {
+            PaletteId::CursorDark => "cursor",
             PaletteId::GitHubDark => "github-dark",
             PaletteId::Dracula => "dracula",
             PaletteId::Catppuccin => "catppuccin",
@@ -58,6 +62,9 @@ impl PaletteId {
 
     pub fn from_id(s: &str) -> Option<Self> {
         let s = s.trim().to_lowercase();
+        if matches!(s.as_str(), "cursor" | "cursor-dark" | "dark") {
+            return Some(PaletteId::CursorDark);
+        }
         Self::ALL
             .iter()
             .copied()
@@ -83,6 +90,7 @@ pub struct Palette {
     pub tab_active: Color,
     pub tab_inactive: Color,
     pub tab_hover: Color,
+    #[allow(dead_code)]
     pub status: Color,
     pub status_fg: Color,
     pub titlebar: Color,
@@ -90,6 +98,7 @@ pub struct Palette {
     pub fg_dim: Color,
     pub fg_muted: Color,
     pub accent: Color,
+    #[allow(dead_code)]
     pub accent_soft: Color,
     pub accent_glow: Color,
     pub border: Color,
@@ -125,6 +134,55 @@ fn rgb(r: u8, g: u8, b: u8) -> Color {
 }
 
 impl Palette {
+    /// Cursor Dark (Anysphere) — recessed chrome, cool blue accent.
+    pub fn cursor_dark() -> Self {
+        Self {
+            bg: rgb(24, 24, 24),            // #181818 content
+            sidebar: rgb(20, 20, 20),       // #141414 chrome (darker)
+            panel: rgb(20, 20, 20),
+            panel_elevated: rgb(24, 24, 24),
+            tab_bar: rgb(20, 20, 20),
+            tab_active: rgb(24, 24, 24),
+            tab_inactive: rgb(31, 31, 31),  // #1f1f1f
+            tab_hover: rgb(41, 41, 41),     // #292929
+            status: rgb(34, 141, 242),      // #228df2
+            status_fg: rgb(255, 255, 255),
+            titlebar: rgb(20, 20, 20),
+            fg: rgb(214, 214, 221),         // #d6d6dd
+            fg_dim: rgb(157, 157, 157),     // #9d9d9d
+            fg_muted: rgb(80, 80, 80),      // #505050
+            accent: rgb(34, 141, 242),      // #228df2
+            accent_soft: rgb(22, 55, 97),   // #163761
+            accent_glow: rgb(64, 166, 255), // #40a6ff
+            border: rgb(42, 42, 42),        // #2a2a2a
+            border_focus: rgb(34, 141, 242),
+            selection: rgb(22, 55, 97),     // #163761
+            close: rgb(248, 81, 73),        // #f85149
+            close_muted: rgb(110, 110, 110),
+            git_mod: rgb(0, 120, 212),      // #0078d4
+            git_add: rgb(46, 160, 67),      // #2ea043
+            git_del: rgb(248, 81, 73),
+            folder: rgb(157, 157, 157),
+            file: rgb(204, 204, 204),
+            ft_ts: rgb(64, 166, 255),
+            ft_js: rgb(226, 192, 141),
+            ft_rs: rgb(228, 135, 106),
+            ft_go: rgb(64, 166, 255),
+            ft_py: rgb(226, 192, 141),
+            ft_md: rgb(157, 157, 157),
+            ft_json: rgb(206, 145, 120),
+            ft_yaml: rgb(248, 81, 73),
+            ft_toml: rgb(46, 160, 67),
+            ft_css: rgb(64, 166, 255),
+            ft_html: rgb(228, 135, 106),
+            ft_sh: rgb(46, 160, 67),
+            ft_docker: rgb(34, 141, 242),
+            ft_lock: rgb(110, 110, 110),
+            ft_test: rgb(46, 160, 67),
+            ft_config: rgb(226, 192, 141),
+        }
+    }
+
     pub fn github_dark() -> Self {
         Self {
             bg: rgb(13, 17, 23),
@@ -511,6 +569,7 @@ impl Palette {
 
     pub fn for_id(id: PaletteId) -> Self {
         match id {
+            PaletteId::CursorDark => Self::cursor_dark(),
             PaletteId::GitHubDark => Self::github_dark(),
             PaletteId::Dracula => Self::dracula(),
             PaletteId::Catppuccin => Self::catppuccin(),
@@ -523,7 +582,7 @@ impl Palette {
     }
 }
 
-static CURRENT_ID: Mutex<PaletteId> = Mutex::new(PaletteId::GitHubDark);
+static CURRENT_ID: Mutex<PaletteId> = Mutex::new(PaletteId::CursorDark);
 
 pub struct Theme;
 
@@ -640,9 +699,7 @@ impl Theme {
     pub fn border(focused: bool) -> Style {
         let p = Self::get();
         if focused {
-            Style::default()
-                .fg(p.border_focus)
-                .add_modifier(Modifier::BOLD)
+            Style::default().fg(p.border_focus)
         } else {
             Style::default().fg(p.border)
         }
@@ -652,17 +709,18 @@ impl Theme {
         let p = Self::get();
         if focused {
             Style::default()
-                .fg(p.status_fg)
-                .bg(p.accent)
+                .fg(p.accent)
+                .bg(p.titlebar)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(p.fg_dim).bg(p.titlebar)
+            Style::default().fg(p.fg_muted).bg(p.titlebar)
         }
     }
 
+    #[allow(dead_code)]
     pub fn status() -> Style {
         let p = Self::get();
-        Style::default().bg(p.status).fg(p.status_fg)
+        Style::default().bg(p.titlebar).fg(p.fg_dim)
     }
 
     pub fn tab_inactive() -> Style {
@@ -675,6 +733,7 @@ impl Theme {
         Style::default().bg(p.tab_bar).fg(p.fg_dim)
     }
 
+    #[allow(dead_code)]
     pub fn button() -> Style {
         let p = Self::get();
         Style::default()

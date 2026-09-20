@@ -30,6 +30,14 @@ enum Focus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TermDock {
+    /// Terminal under explorer + editor (default)
+    Bottom,
+    /// Terminal on the far right, full height (chat-style)
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GitPaneTab {
     Changes,
     Branches,
@@ -47,14 +55,17 @@ enum HitKind {
     TermBody,
     /// Vertical splitter between explorer and editor
     VSplit,
-    /// Horizontal splitter between editor and terminal
+    /// Horizontal splitter between editor and terminal (bottom dock)
     HSplit,
+    /// Vertical splitter between editor and terminal (right dock)
+    TermSplit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DragKind {
     VSplit,
     HSplit,
+    TermSplit,
 }
 
 struct Hit {
@@ -98,9 +109,14 @@ pub struct App {
     tree_width: u16,
     /// Percent of main area given to the top (explorer+editor) vs terminal
     top_pct: u16,
+    /// Where the terminal pane is docked
+    term_dock: TermDock,
+    /// Terminal column width when docked on the right
+    term_width: u16,
     drag: Option<DragKind>,
     v_split_area: Rect,
     h_split_area: Rect,
+    term_split_area: Rect,
     main_area: Rect,
     should_quit: bool,
     show_help: bool,
@@ -157,9 +173,12 @@ impl App {
             blink_started: Instant::now(),
             tree_width: 34,
             top_pct: 42,
+            term_dock: TermDock::Bottom,
+            term_width: 52,
             drag: None,
             v_split_area: Rect::default(),
             h_split_area: Rect::default(),
+            term_split_area: Rect::default(),
             main_area: Rect::default(),
             should_quit: false,
             show_help: false,
@@ -249,6 +268,17 @@ impl App {
         self.close_terminal_at(self.active_term);
     }
 
+    fn toggle_term_dock(&mut self) {
+        self.term_dock = match self.term_dock {
+            TermDock::Bottom => TermDock::Right,
+            TermDock::Right => TermDock::Bottom,
+        };
+        self.status = match self.term_dock {
+            TermDock::Right => "Terminal · docked right · Ctrl+E for bottom".into(),
+            TermDock::Bottom => "Terminal · docked bottom · Ctrl+E for right".into(),
+        };
+    }
+
     fn next_terminal(&mut self) {
         if self.terminals.is_empty() {
             return;
@@ -297,7 +327,10 @@ impl App {
     }
 
     fn is_clickable_at(&self, col: u16, row: u16) -> bool {
-        if point_in(self.v_split_area, col, row) || point_in(self.h_split_area, col, row) {
+        if point_in(self.v_split_area, col, row)
+            || point_in(self.h_split_area, col, row)
+            || point_in(self.term_split_area, col, row)
+        {
             return true;
         }
         if point_in(self.tree_inner, col, row) {
@@ -735,6 +768,10 @@ impl App {
                     };
                     return;
                 }
+                KeyCode::Char('e') => {
+                    self.toggle_term_dock();
+                    return;
+                }
                 KeyCode::Char('d') if self.focus != Focus::Terminal => {
                     self.viewer.toggle_diff(&self.root);
                     self.focus = Focus::Viewer;
@@ -1025,7 +1062,16 @@ impl App {
                     match drag {
                         DragKind::VSplit => {
                             let min_w = 18u16;
-                            let max_w = self.main_area.width.saturating_sub(24).max(min_w);
+                            let reserved = if self.term_dock == TermDock::Right {
+                                self.term_width.saturating_add(1)
+                            } else {
+                                0
+                            };
+                            let max_w = self
+                                .main_area
+                                .width
+                                .saturating_sub(24 + reserved)
+                                .max(min_w);
                             self.tree_width =
                                 col.saturating_sub(self.main_area.x).clamp(min_w, max_w);
                             self.set_pointer(true);
@@ -1036,6 +1082,27 @@ impl App {
                             let y = row.saturating_sub(self.main_area.y);
                             self.top_pct =
                                 ((y as u32 * 100) / total as u32).clamp(20, 80) as u16;
+                            self.set_pointer(true);
+                            return;
+                        }
+                        DragKind::TermSplit => {
+                            let min_w = 24u16;
+                            let left_min = if self.show_tree {
+                                self.tree_width.saturating_add(22)
+                            } else {
+                                20
+                            };
+                            let max_w = self
+                                .main_area
+                                .width
+                                .saturating_sub(left_min)
+                                .max(min_w);
+                            let from_right = self
+                                .main_area
+                                .x
+                                .saturating_add(self.main_area.width)
+                                .saturating_sub(col.saturating_add(1));
+                            self.term_width = from_right.clamp(min_w, max_w);
                             self.set_pointer(true);
                             return;
                         }
@@ -1050,6 +1117,7 @@ impl App {
                 let over_chrome = point_in(self.tree_inner, col, row)
                     || point_in(self.v_split_area, col, row)
                     || point_in(self.h_split_area, col, row)
+                    || point_in(self.term_split_area, col, row)
                     || self.hits.iter().any(|h| {
                         point_in(h.area, col, row)
                             && !matches!(h.kind, HitKind::ViewerBody | HitKind::TermBody)
@@ -1079,6 +1147,11 @@ impl App {
                         }
                         HitKind::HSplit => {
                             self.drag = Some(DragKind::HSplit);
+                            self.set_pointer(true);
+                            return;
+                        }
+                        HitKind::TermSplit => {
+                            self.drag = Some(DragKind::TermSplit);
                             self.set_pointer(true);
                             return;
                         }
@@ -1133,10 +1206,16 @@ impl App {
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 if self.drag.take().is_some() {
-                    self.status = format!(
-                        "layout · explorer {} cols · top {}%",
-                        self.tree_width, self.top_pct
-                    );
+                    self.status = match self.term_dock {
+                        TermDock::Bottom => format!(
+                            "layout · explorer {} cols · top {}%",
+                            self.tree_width, self.top_pct
+                        ),
+                        TermDock::Right => format!(
+                            "layout · explorer {} cols · terminal {} cols",
+                            self.tree_width, self.term_width
+                        ),
+                    };
                 }
             }
             MouseEventKind::Drag(MouseButton::Left) => {
@@ -1144,7 +1223,16 @@ impl App {
                     match drag {
                         DragKind::VSplit => {
                             let min_w = 18u16;
-                            let max_w = self.main_area.width.saturating_sub(24).max(min_w);
+                            let reserved = if self.term_dock == TermDock::Right {
+                                self.term_width.saturating_add(1)
+                            } else {
+                                0
+                            };
+                            let max_w = self
+                                .main_area
+                                .width
+                                .saturating_sub(24 + reserved)
+                                .max(min_w);
                             self.tree_width =
                                 col.saturating_sub(self.main_area.x).clamp(min_w, max_w);
                         }
@@ -1153,6 +1241,25 @@ impl App {
                             let y = row.saturating_sub(self.main_area.y);
                             self.top_pct =
                                 ((y as u32 * 100) / total as u32).clamp(20, 80) as u16;
+                        }
+                        DragKind::TermSplit => {
+                            let min_w = 24u16;
+                            let left_min = if self.show_tree {
+                                self.tree_width.saturating_add(22)
+                            } else {
+                                20
+                            };
+                            let max_w = self
+                                .main_area
+                                .width
+                                .saturating_sub(left_min)
+                                .max(min_w);
+                            let from_right = self
+                                .main_area
+                                .x
+                                .saturating_add(self.main_area.width)
+                                .saturating_sub(col.saturating_add(1));
+                            self.term_width = from_right.clamp(min_w, max_w);
                         }
                     }
                 }
@@ -1226,7 +1333,68 @@ impl App {
 
         let main_area = root_chunks[1];
         self.main_area = main_area;
+        // Clear unused splitter hit areas for the inactive dock mode
+        self.h_split_area = Rect::default();
+        self.term_split_area = Rect::default();
 
+        let (content_area, term_area) = match self.term_dock {
+            TermDock::Bottom => self.layout_bottom_dock(f, main_area),
+            TermDock::Right => self.layout_right_dock(f, main_area),
+        };
+
+        let top = if self.show_tree {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(self.tree_width),
+                    Constraint::Length(1), // vertical splitter
+                    Constraint::Min(20),
+                ])
+                .split(content_area)
+        } else {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(0),
+                    Constraint::Length(0),
+                    Constraint::Min(20),
+                ])
+                .split(content_area)
+        };
+
+        self.tree_area = top[0];
+        self.v_split_area = top[1];
+        self.viewer_area = top[2];
+        self.term_area = term_area;
+
+        if self.show_tree {
+            if self.show_git {
+                self.draw_git(f, top[0]);
+            } else {
+                self.draw_tree(f, top[0]);
+            }
+            self.hits.push(Hit {
+                kind: HitKind::VSplit,
+                area: top[1],
+            });
+            self.draw_v_split_bar(f, top[1], HitKind::VSplit);
+        }
+
+        self.draw_viewer(f, top[2]);
+        self.draw_term(f, term_area);
+        self.draw_status(f, root_chunks[2]);
+        if self.show_help {
+            self.draw_help(f, f.area());
+        }
+        if self.show_themes {
+            self.draw_themes(f, f.area());
+        }
+        if self.show_search {
+            self.draw_search(f, f.area());
+        }
+    }
+
+    fn layout_bottom_dock(&mut self, f: &mut Frame<'_>, main_area: Rect) -> (Rect, Rect) {
         let top_pct = self.top_pct.clamp(20, 80);
         let avail = main_area.height.saturating_sub(1); // leave 1 for splitter
         let top_h = ((avail as u32 * top_pct as u32) / 100)
@@ -1245,7 +1413,6 @@ impl App {
             kind: HitKind::HSplit,
             area: main[1],
         });
-        // Draw horizontal splitter bar
         let h_focused = matches!(self.hover, Some(HitKind::HSplit))
             || matches!(self.drag, Some(DragKind::HSplit));
         let h_label = if h_focused {
@@ -1273,87 +1440,62 @@ impl App {
             main[1],
         );
 
-        let top = if self.show_tree {
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Length(self.tree_width),
-                    Constraint::Length(1), // vertical splitter
-                    Constraint::Min(20),
-                ])
-                .split(main[0])
+        (main[0], main[2])
+    }
+
+    fn layout_right_dock(&mut self, f: &mut Frame<'_>, main_area: Rect) -> (Rect, Rect) {
+        let min_w = 24u16;
+        let left_min = if self.show_tree {
+            self.tree_width.saturating_add(22)
         } else {
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Length(0),
-                    Constraint::Length(0),
-                    Constraint::Min(20),
-                ])
-                .split(main[0])
+            20
         };
+        let max_w = main_area.width.saturating_sub(left_min).max(min_w);
+        let term_w = self.term_width.clamp(min_w, max_w);
+        self.term_width = term_w;
 
-        self.tree_area = top[0];
-        self.v_split_area = top[1];
-        self.viewer_area = top[2];
-        self.term_area = main[2];
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(20),
+                Constraint::Length(1), // vertical splitter
+                Constraint::Length(term_w),
+            ])
+            .split(main_area);
 
-        if self.show_tree {
-            if self.show_git {
-                self.draw_git(f, top[0]);
-            } else {
-                self.draw_tree(f, top[0]);
-            }
-            self.hits.push(Hit {
-                kind: HitKind::VSplit,
-                area: top[1],
-            });
-            let v_focused = matches!(self.hover, Some(HitKind::VSplit))
-                || matches!(self.drag, Some(DragKind::VSplit));
-            f.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    "║",
-                    Style::default()
-                        .fg(if v_focused {
-                            Theme::get().accent_glow
-                        } else {
-                            Theme::get().border
-                        })
-                        .bg(Theme::get().titlebar),
-                )))
-                .alignment(Alignment::Center),
-                top[1],
+        self.term_split_area = cols[1];
+        self.hits.push(Hit {
+            kind: HitKind::TermSplit,
+            area: cols[1],
+        });
+        self.draw_v_split_bar(f, cols[1], HitKind::TermSplit);
+
+        (cols[0], cols[2])
+    }
+
+    fn draw_v_split_bar(&self, f: &mut Frame<'_>, area: Rect, kind: HitKind) {
+        let focused = self.hover == Some(kind)
+            || matches!(
+                (kind, self.drag),
+                (HitKind::VSplit, Some(DragKind::VSplit))
+                    | (HitKind::TermSplit, Some(DragKind::TermSplit))
             );
-            // Fill full height of splitter with ║
-            for y in 0..top[1].height {
-                let cell = Rect {
-                    x: top[1].x,
-                    y: top[1].y.saturating_add(y),
-                    width: 1,
-                    height: 1,
-                };
-                f.render_widget(
-                    Paragraph::new("║").style(Style::default().fg(if v_focused {
-                        Theme::get().accent_glow
-                    } else {
-                        Theme::get().border
-                    }).bg(Theme::get().titlebar)),
-                    cell,
-                );
-            }
-        }
-
-        self.draw_viewer(f, top[2]);
-        self.draw_term(f, main[2]);
-        self.draw_status(f, root_chunks[2]);
-        if self.show_help {
-            self.draw_help(f, f.area());
-        }
-        if self.show_themes {
-            self.draw_themes(f, f.area());
-        }
-        if self.show_search {
-            self.draw_search(f, f.area());
+        let fg = if focused {
+            Theme::get().accent_glow
+        } else {
+            Theme::get().border
+        };
+        for y in 0..area.height {
+            let cell = Rect {
+                x: area.x,
+                y: area.y.saturating_add(y),
+                width: 1,
+                height: 1,
+            };
+            f.render_widget(
+                Paragraph::new("║").style(Style::default().fg(fg).bg(Theme::get().titlebar)),
+                cell,
+            );
         }
     }
 
@@ -1850,7 +1992,14 @@ impl App {
             .title_alignment(Alignment::Left)
             .title_bottom(Span::styled(
                 if focused {
-                    "  Esc leave  ·  [x] close tab  ·  ＋ new  ·  ? help  "
+                    match self.term_dock {
+                        TermDock::Bottom => {
+                            "  Esc leave  ·  Ctrl+E dock right  ·  [x] close  ·  ＋ new  "
+                        }
+                        TermDock::Right => {
+                            "  Esc leave  ·  Ctrl+E dock bottom  ·  [x] close  ·  ＋ new  "
+                        }
+                    }
                 } else {
                     "  click this panel → run  codex  or  claude  "
                 },
@@ -2119,7 +2268,7 @@ impl App {
             Line::from(""),
             Line::from("  1. Click a file in FILES (left) to open it"),
             Line::from("  2. Read it in EDITOR — click [x] to close a tab"),
-            Line::from("  3. Click TERMINAL (bottom) and run:  codex"),
+            Line::from("  3. Click TERMINAL and run:  codex"),
             Line::from(""),
             Line::from(Span::styled(
                 "  Mouse",
@@ -2135,6 +2284,7 @@ impl App {
             )),
             Line::from("  Ctrl+T   switch panel     Esc      leave terminal"),
             Line::from("  Ctrl+N   new terminal     Ctrl+W   close tab"),
+            Line::from("  Ctrl+E   dock terminal right ↔ bottom"),
             Line::from("  Ctrl+D   cycle diff        Ctrl+G   git pane"),
             Line::from("  Ctrl+L   blame file        Ctrl+B   hide files"),
             Line::from("  Ctrl+O   search files     Ctrl+Q   quit"),
@@ -2153,7 +2303,7 @@ impl App {
                 Style::default().fg(Theme::get().accent_glow),
             )),
             Line::from(Span::styled(
-                "  Tip: keep Codex/Claude in the bottom panel — files reload live.",
+                "  Tip: dock the terminal right (Ctrl+E) like a chat panel — or bottom.",
                 Style::default().fg(Theme::get().fg_dim),
             )),
         ];
@@ -2325,12 +2475,12 @@ fn welcome_lines() -> Vec<Line<'static>> {
             Style::default().fg(Theme::get().fg).bg(Theme::get().bg),
         )),
         Line::from(Span::styled(
-            "   3.  Click the bottom panel → type  codex",
+            "   3.  Click TERMINAL → type  codex",
             Style::default().fg(Theme::get().fg).bg(Theme::get().bg),
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "   Drag the ═ bar to give the terminal more room",
+            "   Ctrl+E docks the terminal right (like chat) or bottom",
             Style::default().fg(Theme::get().fg_dim).bg(Theme::get().bg),
         )),
         Line::from(Span::styled(

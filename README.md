@@ -10,6 +10,8 @@ Terminal IDE for Codex workflows: file tree, read-only viewer, and embedded shel
 └────────────────────────────────────────────┘
 ```
 
+`Ctrl+E` docks the terminal on the far right (chat-style) or back underneath.
+
 ## Install
 
 **Binary** (no Rust) — download for your OS from [Releases](https://github.com/Mudit-Jxin7/noir/releases/latest):
@@ -66,6 +68,7 @@ Themes: `github-dark`, `dracula`, `catppuccin`, `nord`, `tokyo-night`, `gruvbox`
 | `Ctrl+[` / `Ctrl+]` | Prev / next file tab |
 | `Ctrl+Tab` | Next terminal |
 | `Ctrl+T` | Cycle focus |
+| `Ctrl+E` | Dock terminal right ↔ bottom |
 | `Ctrl+D` | Cycle diff: HEAD → unstaged → staged → file |
 | `Ctrl+G` | Git pane (stage list, branches, blame) |
 | `Ctrl+L` | Blame active file |

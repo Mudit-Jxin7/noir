@@ -59,6 +59,22 @@ noir --theme dracula .          # theme: github-dark, dracula, catppuccin, nord,
 | `Ctrl+P` / `Ctrl+0` | Theme picker / cycle |
 | `Ctrl+Q` | Quit |
 
+## Benchmarks
+
+| Language | Files Indexed | Index Time | Fuzzy Search | Full-Tree Regex Scan | Resident RAM (RSS) |
+|---|---:|---:|---:|---:|---:|
+| TypeScript | 14,031 | 121.5 ms | 8.5 ms | 2.84 s | 18.9 MB |
+| Python | 8,222 | 167.3 ms | 7.4 ms | 1.62 s | 18.6 MB |
+| Svelte | 4,718 | 45.7 ms | 2.4 ms | 724.5 ms | 24.6 MB |
+| Go | 3,133 | 36.1 ms | 2.2 ms | 493.8 ms | 24.3 MB |
+| TypeScript | 2,024 | 46.4 ms | 1.3 ms | 337.4 ms | 17.6 MB |
+| Java | 1,374 | 40.9 ms | 1.1 ms | 179.5 ms | 17.5 MB |
+| Python | 787 | 30.6 ms | 491 µs | 125.4 ms | 17.9 MB |
+| Java | 545 | 32.8 ms | 356 µs | 73.9 ms | 17.5 MB |
+| Shell | 348 | 23.3 ms | 265 µs | 38.5 ms | 18.6 MB |
+| JavaScript | 228 | 21.0 ms | 109 µs | 39.6 ms | 25.8 MB |
+| Java | 158 | 22.0 ms | 100 µs | 39.5 ms | 24.5 MB |
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

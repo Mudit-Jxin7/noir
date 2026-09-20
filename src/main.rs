@@ -22,7 +22,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use crate::app::App;
 
 #[derive(Debug, Parser)]
-#[command(name = "termide", about = "Lightweight terminal IDE for Codex workflows")]
+#[command(name = "noir", about = "Lightweight terminal IDE for Codex workflows")]
 struct Cli {
     /// Workspace root to open (defaults to cwd)
     #[arg(default_value = ".")]

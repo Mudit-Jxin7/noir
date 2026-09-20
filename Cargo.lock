@@ -1139,7 +1139,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "termide"
+name = "noir"
 version = "0.1.0"
 dependencies = [
  "anyhow",

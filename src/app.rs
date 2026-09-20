@@ -935,7 +935,7 @@ impl App {
         };
         let line = Line::from(vec![
             Span::styled(
-                "  ◆ termide  ",
+                "  ◆ noir  ",
                 Style::default()
                     .fg(Theme::get().status_fg)
                     .bg(Theme::get().accent)
@@ -1493,7 +1493,7 @@ impl App {
 
         let lines = vec![
             Line::from(Span::styled(
-                "  How to use termide",
+                "  How to use noir",
                 Style::default()
                     .fg(Theme::get().accent_glow)
                     .add_modifier(Modifier::BOLD),
@@ -1584,7 +1584,7 @@ impl App {
         }
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  Saved to ~/.termide/theme",
+            "  Saved to ~/.noir/theme",
             Style::default().fg(Theme::get().fg_muted),
         )));
         f.render_widget(Paragraph::new(lines), inner);

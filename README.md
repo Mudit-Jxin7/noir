@@ -1,4 +1,4 @@
-# termide
+# noir
 
 Lightweight terminal IDE for Codex workflows: **clickable file tree**, **read-only code/diff viewer**, and an **embedded terminal** — without Electron.
 
@@ -16,9 +16,8 @@ Lightweight terminal IDE for Codex workflows: **clickable file tree**, **read-on
 
 ```bash
 # needs Rust (rustup)
-cd ~/projects/termide
 cargo build --release
-./target/release/termide /path/to/repo
+./target/release/noir /path/to/repo
 
 # or
 cargo run --release -- .
@@ -27,7 +26,7 @@ cargo run --release -- .
 Optional shell:
 
 ```bash
-termide -c /bin/zsh ~/godaddy/airo-app-builder
+noir -c /bin/zsh ~/path/to/repo
 ```
 
 ## Keybindings
@@ -54,8 +53,8 @@ termide -c /bin/zsh ~/godaddy/airo-app-builder
 `github-dark` · `dracula` · `catppuccin` · `nord` · `tokyo-night` · `gruvbox` · `one-dark` · `solarized`
 
 ```bash
-termide --theme dracula .
-# in-app: Ctrl+P  ·  saved to ~/.termide/theme
+noir --theme dracula .
+# in-app: Ctrl+P  ·  saved to ~/.noir/theme
 ```
 
 ## Memory goal

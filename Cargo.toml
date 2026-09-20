@@ -1,5 +1,5 @@
 [package]
-name = "termide"
+name = "noir"
 version = "0.1.0"
 edition = "2021"
 description = "Lightweight terminal IDE: clickable tree, read-only viewer, embedded shell/Codex"

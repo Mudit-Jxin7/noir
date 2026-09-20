@@ -1,4 +1,4 @@
-//! Selectable color palettes for termide.
+//! Selectable color palettes for noir.
 
 use std::fs;
 use std::path::PathBuf;
@@ -695,9 +695,9 @@ impl Theme {
 
 fn config_path() -> PathBuf {
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        return PathBuf::from(xdg).join("termide").join("theme");
+        return PathBuf::from(xdg).join("noir").join("theme");
     }
-    dirs_fallback().join(".termide").join("theme")
+    dirs_fallback().join(".noir").join("theme")
 }
 
 fn dirs_fallback() -> PathBuf {

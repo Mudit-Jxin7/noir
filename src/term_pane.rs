@@ -47,7 +47,7 @@ impl TermPane {
         // Agent-friendly terminal capabilities
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
-        cmd.env("TERM_PROGRAM", "termide");
+        cmd.env("TERM_PROGRAM", "noir");
 
         let child = pair
             .slave
